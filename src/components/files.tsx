@@ -1,0 +1,109 @@
+import { ensureBlob } from '../lib/sync'
+import { db, FILE_KIND_LABEL, type FileKind, type StoredFile, type Subject } from '../db'
+import { formatShort } from '../lib/dates'
+import { fileBadge, humanSize } from '../lib/extract'
+import { Dot } from './ui'
+
+const BADGE_COLORS: Record<string, [string, string]> = {
+  PDF: ['#2b2420', '#f2b266'],
+  IMG: ['#1f2a2e', '#59d3c2'],
+  AUD: ['#2a2230', '#d6b8ff'],
+  VID: ['#2a2230', '#d6b8ff'],
+}
+
+export async function openFile(f: StoredFile) {
+  // Abrimos la pestaña ya (los navegadores bloquean ventanas abiertas después de esperar)
+  const win = window.open('', '_blank')
+  try {
+    const blob = await ensureBlob(f)
+    const url = URL.createObjectURL(blob)
+    if (win) win.location.href = url
+    else window.location.href = url
+    setTimeout(() => URL.revokeObjectURL(url), 120_000)
+  } catch (err) {
+    win?.close()
+    alertError(err)
+  }
+}
+
+function alertError(err: unknown) {
+  const msg = err instanceof Error ? err.message : 'No se pudo abrir el archivo.'
+  window.dispatchEvent(new CustomEvent('app-toast', { detail: msg }))
+}
+
+export function FileItem({ file, subject, onEdit }: { file: StoredFile; subject?: Subject; onEdit?: () => void }) {
+  const badge = fileBadge(file.mime, file.name)
+  const [bg, fg] = BADGE_COLORS[badge] ?? ['#232838', '#c9d4ff']
+  return (
+    <div className="list-item">
+      <span className="badge" style={{ background: bg, color: fg }}>{badge}</span>
+      <button className="grow" onClick={() => openFile(file)} style={{ background: 'none', border: 0, padding: 0, textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+        <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+        <span className="row wrap xs muted" style={{ gap: 5 }}>
+          {subject && (
+            <>
+              <Dot color={subject.color} /> {subject.short} ·
+            </>
+          )}
+          {FILE_KIND_LABEL[file.kind]}
+          {file.topic ? ` · ${file.topic}` : ''} · {formatShort(file.date)} · {humanSize(file.size)}
+        </span>
+      </button>
+      {onEdit && (
+        <button className="btn sm ghost" onClick={onEdit}>
+          Editar
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** Adivina asignatura, tema y tipo a partir del nombre y el texto (la IA lo hará mejor en la fase 2). */
+export function guessClassification(name: string, text: string, subjects: Subject[]) {
+  const hay = `${name} ${text.slice(0, 4000)}`.toLowerCase()
+  const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  const nh = norm(hay)
+
+  let subjectId: string | undefined
+  let best = 0
+  for (const s of subjects.filter((x) => x.status === 'active')) {
+    const words = [s.name, s.short].map(norm)
+    const score = words.reduce((acc, w) => acc + (nh.split(w).length - 1), 0)
+    if (score > best) {
+      best = score
+      subjectId = s.id
+    }
+  }
+  if (!subjectId) {
+    // pistas típicas de cada asignatura de 1º
+    const hints: Record<string, string[]> = {
+      algebra: ['matriz', 'matrices', 'determinante', 'espacio vectorial', 'subespacio', 'autovalor', 'sistema de ecuaciones', 'lineal'],
+      calculo: ['derivada', 'integral', 'limite', 'continuidad', 'sucesion', 'serie', 'taylor', 'funcion real'],
+    }
+    for (const s of subjects.filter((x) => x.status === 'active')) {
+      const key = norm(s.short)
+      const list = hints[key]
+      if (list && list.some((h) => nh.includes(h))) {
+        subjectId = s.id
+        break
+      }
+    }
+  }
+
+  const topicMatch = nh.match(/\b(?:tema|t|unidad|capitulo)[\s_-]*(\d{1,2})\b/)
+  const topic = topicMatch ? `Tema ${topicMatch[1]}` : undefined
+
+  let kind: FileKind = 'apuntes'
+  if (/examen|parcial|final|convocatoria|enero|junio|julio/.test(nh)) kind = 'examen'
+  else if (/solucion|soluciones|resuelto/.test(nh)) kind = 'solucion'
+  else if (/ejercicio|hoja|boletin|problema|practica/.test(nh)) kind = 'ejercicios'
+  else if (/diapositiva|slides|presentacion|\.pptx?$/.test(nh)) kind = 'diapositivas'
+
+  return { subjectId, topic, kind }
+}
+
+export async function deleteFile(id: string) {
+  await db.files.delete(id)
+  const notes = await db.notes.filter((n) => n.fileIds.includes(id)).toArray()
+  for (const n of notes) await db.notes.update(n.id, { fileIds: n.fileIds.filter((x) => x !== id) })
+}
