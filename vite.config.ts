@@ -7,8 +7,11 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Envía las cookies al pedir el manifiesto (si Vercel protege la dirección, sin esto no se puede instalar)
+      useCredentials: true,
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
+        id: '/',
         name: 'Organizador de estudios',
         short_name: 'Estudios',
         description: 'Tu organizador de la carrera: asignaturas, apuntes, calendario, tareas y estudio con IA.',
@@ -17,15 +20,17 @@ export default defineConfig({
         background_color: '#0b0c0f',
         display: 'standalone',
         start_url: '/',
+        scope: '/',
+        categories: ['education', 'productivity'],
         icons: [
-          { src: 'pwa-192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'pwa-512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'pwa-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
           { src: 'pwa-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
         shortcuts: [
-          { name: 'Subir archivo', url: '/#/subir' },
-          { name: 'Tareas', url: '/#/tareas' },
-          { name: 'Pomodoro', url: '/#/estudiar?tab=pomodoro' },
+          { name: 'Subir archivo', url: '/#/subir', icons: [{ src: 'pwa-192.png', sizes: '192x192', type: 'image/png' }] },
+          { name: 'Tareas', url: '/#/tareas', icons: [{ src: 'pwa-192.png', sizes: '192x192', type: 'image/png' }] },
+          { name: 'Pomodoro', url: '/#/estudiar?tab=pomodoro', icons: [{ src: 'pwa-192.png', sizes: '192x192', type: 'image/png' }] },
         ],
       },
       workbox: {

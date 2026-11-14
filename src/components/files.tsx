@@ -1,4 +1,3 @@
-import { ensureBlob } from '../lib/sync'
 import { db, FILE_KIND_LABEL, type FileKind, type StoredFile, type Subject } from '../db'
 import { formatShort } from '../lib/dates'
 import { fileBadge, humanSize } from '../lib/extract'
@@ -11,24 +10,9 @@ const BADGE_COLORS: Record<string, [string, string]> = {
   VID: ['#1d2230', '#8fb8ff'],
 }
 
-export async function openFile(f: StoredFile) {
-  // Abrimos la pestaña ya (los navegadores bloquean ventanas abiertas después de esperar)
-  const win = window.open('', '_blank')
-  try {
-    const blob = await ensureBlob(f)
-    const url = URL.createObjectURL(blob)
-    if (win) win.location.href = url
-    else window.location.href = url
-    setTimeout(() => URL.revokeObjectURL(url), 120_000)
-  } catch (err) {
-    win?.close()
-    alertError(err)
-  }
-}
-
-function alertError(err: unknown) {
-  const msg = err instanceof Error ? err.message : 'No se pudo abrir el archivo.'
-  window.dispatchEvent(new CustomEvent('app-toast', { detail: msg }))
+/** Abre el archivo en el visor de la app (ver FileViewer). */
+export function openFile(f: StoredFile) {
+  window.dispatchEvent(new CustomEvent('open-file', { detail: f }))
 }
 
 export function FileItem({ file, subject, onEdit }: { file: StoredFile; subject?: Subject; onEdit?: () => void }) {
