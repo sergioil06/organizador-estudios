@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { HashRouter, Route, Routes } from 'react-router-dom'
 import { CommandPalette, QuickAdd, SideNav } from './components/shell'
 import { ToastProvider } from './components/ui'
+import { FileViewer } from './components/FileViewer'
 import { seedIfEmpty } from './seed'
 import Home from './pages/Home'
 import CalendarPage from './pages/Calendar'
@@ -49,6 +50,7 @@ export default function App() {
         </div>
         <QuickAdd />
         <CommandPalette />
+        <FileViewer />
       </ToastProvider>
     </HashRouter>
   )

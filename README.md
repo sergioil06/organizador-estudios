@@ -61,6 +61,11 @@ La clave se guarda en tu dispositivo y en tu Drive, así que solo hay que ponerl
 
 En cada dispositivo nuevo: **Ajustes → Conectar con Google** y en unos segundos aparece todo.
 
+**Si al instalar dice que no se puede descargar:**
+1. Instálala desde la dirección **corta** de producción (la que sale en Vercel → tu proyecto → *Domains*, del tipo `organizador-estudios-xxxx.vercel.app`), no desde la dirección larga de un despliegue concreto.
+2. En Vercel → *Settings* → *Deployment Protection*, pon **Vercel Authentication** en *Disabled* (o al menos que no proteja producción). Si la dirección pide iniciar sesión en Vercel, Google no puede leer los iconos de la app y la instalación en Android falla.
+3. Si ya tenías un intento a medias, borra el icono que se haya creado, recarga la página y vuelve a *Instalar aplicación*.
+
 ## Avisos
 
 Los avisos de exámenes, entregas y tareas con fecha se crean en Google Calendar con recordatorios, así que te llegan al móvil aunque no abras la app. Asegúrate de tener las notificaciones de Google Calendar activadas.

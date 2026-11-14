@@ -4,8 +4,10 @@ import { registerSW } from 'virtual:pwa-register'
 import './index.css'
 import App from './App.tsx'
 import { installSyncHooks, scheduleSync } from './lib/sync'
+import { listenForInstall } from './lib/install'
 
 installSyncHooks()
+listenForInstall()
 
 // Sincroniza al abrir, al volver a la app, al recuperar internet y cada pocos minutos.
 scheduleSync(1500)

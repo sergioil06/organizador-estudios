@@ -12,15 +12,8 @@ import { connectGoogle, disconnectGoogle, googleConfigured } from '../lib/google
 import { applyCalendarImport, previewCalendarImport } from '../lib/importCalendar'
 import { onSyncState, syncNow, type SyncState } from '../lib/sync'
 import { humanSize } from '../lib/extract'
+import { useInstall } from '../lib/install'
 
-interface InstallEvent extends Event {
-  prompt: () => Promise<void>
-}
-let installEvent: InstallEvent | null = null
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault()
-  installEvent = e as InstallEvent
-})
 
 function useSetting<T>(key: string, fallback: T): [T, (v: T) => Promise<void>] {
   const v = useLiveQuery(() => db.settings.get(key), [key])
@@ -29,6 +22,7 @@ function useSetting<T>(key: string, fallback: T): [T, (v: T) => Promise<void>] {
 
 export default function Settings() {
   const toast = useToast()
+  const install = useInstall()
   const navigate = useNavigate()
   const subjects = useSubjects()
   const [name, setName] = useSetting('name', '')
@@ -313,10 +307,10 @@ export default function Settings() {
         </div>
       </section>
 
-      {installEvent && (
+      {install.canInstall && (
         <section className="card pad stack">
           <h2>Instalar</h2>
-          <button className="btn primary" style={{ alignSelf: 'flex-start' }} onClick={() => installEvent?.prompt()}>
+          <button className="btn primary" style={{ alignSelf: 'flex-start' }} onClick={() => void install.prompt()}>
             Instalar la app en este dispositivo
           </button>
         </section>
