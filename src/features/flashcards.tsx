@@ -32,9 +32,9 @@ export function newCard(subjectId: string, front: string, back: string, topic?: 
 }
 
 export async function generateCards(subject: Subject, topic: string | undefined, material?: string) {
-  const ctx = material ?? (await subjectContext(subject.id, topic, 200_000)).text
-  if (!ctx.trim()) throw new AiError('No hay apuntes con texto para esa asignatura o tema. Sube PDFs o fotos, o escribe notas.')
-  const cards = await aiFlashcards(subject, ctx, 15)
+  const ctx = material != null ? { text: material, files: [] } : await subjectContext(subject.id, topic, 200_000)
+  if (!ctx.text.trim() && ctx.files.length === 0) throw new AiError('No hay apuntes para esa asignatura o tema. Sube PDFs o fotos, o escribe notas.')
+  const cards = await aiFlashcards(subject, ctx.text, 15, ctx.files)
   await db.cards.bulkAdd(cards.map((c) => newCard(subject.id, c.front, c.back, topic)))
   return cards.length
 }
