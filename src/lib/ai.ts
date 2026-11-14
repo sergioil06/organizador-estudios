@@ -30,6 +30,8 @@ export class AiError extends Error {}
 type CallOpts = { system?: string; schema?: object; temperature?: number }
 
 const TIMEOUT_MS = 150_000
+/** Modelos de reserva del plan gratuito, cada uno con su propia cuota. */
+const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite']
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -56,40 +58,48 @@ async function call(contents: { role: string; parts: Part[] }[], opts: CallOpts 
   }
   if (opts.system) body.systemInstruction = { parts: [{ text: opts.system }] }
 
-  // El plan gratuito a veces responde 503 (modelo saturado) o 500: se reintenta solo.
+  // Si el modelo elegido está saturado (5xx) o sin cuota (429, que en el plan gratis es por modelo),
+  // se prueba con los siguientes, que tienen su propia cuota gratuita.
+  const models = [...new Set([model, ...FALLBACK_MODELS])]
   let res: Response | null = null
   let detail = ''
-  for (let attempt = 0; attempt < 3; attempt++) {
-    // Sin límite de tiempo, una petición colgada dejaba el botón "pensando" para siempre.
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
-    try {
-      res = await fetch(`${ENDPOINT}/${model}:generateContent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify(body),
-        signal: ctrl.signal,
-      })
-    } catch (err) {
-      if (ctrl.signal.aborted) throw new AiError('La IA ha tardado demasiado en responder. Prueba con un tema concreto en vez de toda la asignatura.')
-      throw new AiError(`No se pudo contactar con la IA (${err instanceof Error ? err.message : 'error de red'}).`)
-    } finally {
-      clearTimeout(timer)
+  let status = 0
+  const seen: number[] = []
+  outer: for (const m of models) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      // Sin límite de tiempo, una petición colgada dejaba el botón "pensando" para siempre.
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
+      try {
+        res = await fetch(`${ENDPOINT}/${m}:generateContent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+          body: JSON.stringify(body),
+          signal: ctrl.signal,
+        })
+      } catch (err) {
+        if (ctrl.signal.aborted) throw new AiError('La IA ha tardado demasiado en responder. Prueba con un tema concreto en vez de toda la asignatura.')
+        throw new AiError(`No se pudo contactar con la IA (${err instanceof Error ? err.message : 'error de red'}).`)
+      } finally {
+        clearTimeout(timer)
+      }
+      if (res.ok) break outer
+      status = res.status
+      detail = await res.text().catch(() => '')
+      seen.push(status)
+      console.warn(`Gemini ${m} respondió ${status}`, detail)
+      if (status === 429 || status === 404) continue outer // siguiente modelo
+      if (![500, 502, 503, 504].includes(status)) break outer // error de la petición: no sirve cambiar de modelo
+      if (attempt === 0) await wait(2000)
     }
-    if (res.ok) break
-    detail = await res.text().catch(() => '')
-    if (![500, 502, 503, 504].includes(res.status)) break
-    await wait(1500 * (attempt + 1) ** 2)
   }
   if (!res || !res.ok) {
-    const status = res?.status ?? 0
     const msg = googleMessage(detail)
-    console.warn('Error de Gemini', status, detail)
-    if (status === 429) throw new AiError('Has llegado al límite gratuito de la IA por ahora (por minuto o por día). Prueba dentro de un rato o con menos material (elige un tema).')
+    const why = msg ? ` (Google: ${msg.slice(0, 160)})` : ''
     if (status === 400 && /API key/i.test(detail)) throw new AiError('La clave de la IA no es válida. Revísala en Ajustes.')
-    if (status === 404) throw new AiError(`El modelo «${model}» no existe o ya no está disponible. Cámbialo en Ajustes (deja ${DEFAULT_MODEL}).`)
-    if (status === 503 || status === 500) throw new AiError('Los servidores de la IA están saturados ahora mismo. Prueba en unos minutos.')
-    if (status === 400 && /token|too large|exceeds/i.test(msg)) throw new AiError('Hay demasiado material de golpe para la IA. Elige un tema concreto.')
+    if (status === 400 && /token|too large|exceeds|size/i.test(msg)) throw new AiError(`Hay demasiado material de golpe para la IA. Elige un tema concreto.${why}`)
+    if (seen.every((x) => x === 429 || x === 404)) throw new AiError(`Has gastado el límite gratuito de la IA por ahora (se reinicia cada minuto y del todo a las 9:00). Prueba en un rato o con un tema concreto.${why}`)
+    if (seen.some((x) => x >= 500)) throw new AiError(`Google no ha podido procesar la petición (error ${status}) ni con los modelos de reserva. Prueba con un tema concreto o en unos minutos.${why}`)
     throw new AiError(`La IA respondió con un error (${status})${msg ? `: ${msg}` : ''}`)
   }
   const json = await res.json()
@@ -173,7 +183,7 @@ export async function blobToBase64(blob: Blob): Promise<string> {
 const INLINE_TYPES = /^(image\/(png|jpe?g|webp|heic|heif)|application\/pdf|audio\/|video\/)/
 const MAX_INLINE = 18 * 1024 * 1024
 /** Lo que cabe en una petición a Gemini (20 MB en total, y base64 ocupa un 33 % más). */
-const INLINE_BUDGET = 12 * 1024 * 1024
+const INLINE_BUDGET = 6 * 1024 * 1024
 
 /** Convierte un archivo en partes que la IA puede leer (el propio archivo si es imagen/PDF/audio, o su texto). */
 /** Texto real (sin las marcas "[pág. N]" que salen de los PDF escaneados o escritos a mano). */
