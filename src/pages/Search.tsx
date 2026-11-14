@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { db, FILE_KIND_LABEL, type FileKind, type Note, type StoredFile, type Task } from '../db'
 import { openFile } from '../components/files'
 import { Icon } from '../components/Icon'
@@ -43,7 +43,8 @@ export default function Search() {
   const subjects = useSubjects()
   const byId = new Map(subjects.map((s) => [s.id, s]))
   const navigate = useNavigate()
-  const [q, setQ] = useState('')
+  const [params] = useSearchParams()
+  const [q, setQ] = useState(() => params.get('q') ?? '')
   const [subject, setSubject] = useState('')
   const [kind, setKind] = useState<FileKind | 'nota' | 'tarea' | ''>('')
   const [tag, setTag] = useState('')
@@ -93,7 +94,7 @@ export default function Search() {
   const hasQuery = q.trim() || subject || kind || tag || fromDate || toDate
 
   return (
-    <div className="page">
+    <div className="page narrow">
       <div className="row">
         <button className="btn icon ghost" onClick={() => navigate(-1)} aria-label="Volver">
           <Icon name="back" />

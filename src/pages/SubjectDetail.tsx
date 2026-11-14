@@ -48,27 +48,31 @@ export default function SubjectDetail() {
 
   return (
     <div className="page">
-      <div className="row" style={{ alignItems: 'flex-start' }}>
-        <Link to="/asignaturas" className="btn icon ghost" aria-label="Volver a asignaturas">
-          <Icon name="back" />
-        </Link>
-        <div className="stack grow" style={{ gap: 2 }}>
-          <h1 className="row" style={{ gap: 10 }}>
-            <span className="dot" style={{ background: subject.color, width: 14, height: 14 }} />
-            {subject.name}
-          </h1>
+      <div className="subject-hero stack" style={{ ['--c' as string]: subject.color, gap: 14 }}>
+        <div className="row" style={{ alignItems: 'flex-start' }}>
+          <Link to="/asignaturas" className="btn icon sm ghost" aria-label="Volver a asignaturas" style={{ marginLeft: -6 }}>
+            <Icon name="back" size={18} />
+          </Link>
+          <span className="grow" />
+          <button className="btn sm" onClick={() => setEditing(true)}>
+            <Icon name="edit" size={16} /> Editar
+          </button>
+        </div>
+        <div className="stack" style={{ gap: 6 }}>
+          <span className="label row" style={{ gap: 8, color: subject.color }}>
+            <span className="dot" style={{ background: subject.color }} />
+            {subject.short} · {subject.year}º curso · {subject.term}º cuatrimestre
+          </span>
+          <h1 style={{ fontSize: 32 }}>{subject.name}</h1>
           <span className="small muted">
-            {subject.year}º · {subject.term}er cuatrimestre · {subject.credits} ECTS · {subject.professor ? `Prof. ${subject.professor}` : 'Profesor sin añadir'}
+            {subject.credits} ECTS · {subject.professor ? `Prof. ${subject.professor}` : 'Profesor sin añadir'}
           </span>
         </div>
-        <button className="btn sm" onClick={() => setEditing(true)}>
-          <Icon name="edit" size={16} /> Editar
-        </button>
       </div>
 
-      <div className="chips" role="tablist" aria-label="Secciones de la asignatura">
+      <div className="tabs" role="tablist" aria-label="Secciones de la asignatura">
         {tabs.map((t) => (
-          <button key={t.id} role="tab" aria-selected={tab === t.id} className={`chip ${tab === t.id ? 'on' : ''}`} onClick={() => setParams({ tab: t.id }, { replace: true })}>
+          <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? 'on' : ''}`} onClick={() => setParams({ tab: t.id }, { replace: true })}>
             {t.label}
           </button>
         ))}

@@ -15,7 +15,7 @@ export function TaskItem({ task, subject, onOpen }: { task: Task; subject?: Subj
     <div className="list-item" style={{ alignItems: 'flex-start' }}>
       <input
         type="checkbox"
-        className="check"
+        className={`check p-${task.priority}`}
         checked={task.done}
         onChange={() => toggleTask(task)}
         aria-label={`Marcar "${task.title}" como ${task.done ? 'pendiente' : 'hecha'}`}

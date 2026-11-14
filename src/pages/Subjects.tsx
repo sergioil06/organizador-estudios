@@ -33,7 +33,10 @@ export default function Subjects() {
   return (
     <div className="page">
       <div className="page-head">
-        <h1>Asignaturas</h1>
+        <div>
+          <span className="label eyebrow">Curso 2026-27</span>
+          <h1>Asignaturas</h1>
+        </div>
         <button className="btn sm" onClick={() => setAdding(true)}>
           <Icon name="plus" size={16} /> Añadir
         </button>
@@ -42,13 +45,13 @@ export default function Subjects() {
       <div className="grid-2">
         <div className="card pad stack" style={{ gap: 2 }}>
           <span className="label">Créditos superados</span>
-          <span className="tnum" style={{ fontFamily: 'var(--display)', fontSize: 26, fontWeight: 600 }}>
+          <span className="tnum" style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.03em' }}>
             {credits} <span className="small muted">/ 240 ECTS</span>
           </span>
         </div>
         <div className="card pad stack" style={{ gap: 2 }}>
           <span className="label">Media del expediente</span>
-          <span className="tnum" style={{ fontFamily: 'var(--display)', fontSize: 26, fontWeight: 600 }}>
+          <span className="tnum" style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.03em' }}>
             {avg != null ? avg.toFixed(2).replace('.', ',') : '—'}
           </span>
         </div>
@@ -60,6 +63,33 @@ export default function Subjects() {
         return (
           <section key={g.status} className="stack">
             <h2>{g.title}</h2>
+            {g.status === 'active' ? (
+              <div className="grid-auto" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
+                {list.map((s) => {
+                  const c = counts.get(s.id)
+                  return (
+                    <Link key={s.id} to={`/asignaturas/${s.id}`} className="card subject-card" style={{ ['--c' as string]: s.color }}>
+                      <span className="row" style={{ gap: 8 }}>
+                        <span className="dot" style={{ background: s.color }} />
+                        <span className="label" style={{ color: s.color }}>{s.short}</span>
+                        <span className="grow" />
+                        <Icon name="arrow" size={16} />
+                      </span>
+                      <span className="stack" style={{ gap: 3 }}>
+                        <span style={{ fontWeight: 600, fontSize: 17, letterSpacing: '-0.01em' }}>{s.name}</span>
+                        <span className="xs muted">
+                          {s.term}º cuatrimestre · {s.credits} ECTS{s.professor ? ` · ${s.professor}` : ''}
+                        </span>
+                      </span>
+                      <span className="sc-meta">
+                        <span>{c?.files ?? 0} archivos</span>
+                        <span>{c?.tasks ?? 0} tareas pendientes</span>
+                      </span>
+                    </Link>
+                  )
+                })}
+              </div>
+            ) : (
             <div className="card list">
               {list.map((s) => {
                 const c = counts.get(s.id)
@@ -85,6 +115,7 @@ export default function Subjects() {
                 )
               })}
             </div>
+            )}
           </section>
         )
       })}

@@ -13,8 +13,8 @@ export default defineConfig({
         short_name: 'Estudios',
         description: 'Tu organizador de la carrera: asignaturas, apuntes, calendario, tareas y estudio con IA.',
         lang: 'es',
-        theme_color: '#0f1115',
-        background_color: '#0f1115',
+        theme_color: '#0b0c0f',
+        background_color: '#0b0c0f',
         display: 'standalone',
         start_url: '/',
         icons: [

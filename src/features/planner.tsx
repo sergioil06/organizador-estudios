@@ -5,7 +5,7 @@ import { Icon } from '../components/Icon'
 import { ConfirmButton, Dot, Empty, Sheet, useToast } from '../components/ui'
 import { useSubjects, useToday } from '../hooks'
 import { aiAvailable, aiStudyPlan, type PlanDay } from '../lib/ai'
-import { addDays, daysBetween, formatShort, minutes, weekday } from '../lib/dates'
+import { addDays, daysBetween, formatShort, minutes, weekday, WEEKDAYS } from '../lib/dates'
 
 async function dailyBudget(): Promise<{ weekday: number; weekend: number }> {
   const v = (await db.settings.get('studyMinutes'))?.value as { weekday: number; weekend: number } | undefined
@@ -108,7 +108,7 @@ function PlanRow({ plan, date, item, subject }: { plan: StudyPlan; date: string;
   }
   return (
     <label className="list-item" style={{ cursor: 'pointer' }}>
-      <input type="checkbox" className="check" checked={item.done} onChange={toggle} />
+      <input type="checkbox" className="check square" style={subject ? { ['--check' as string]: subject.color } : undefined} checked={item.done} onChange={toggle} aria-label={`${item.topic}: ${item.activity}`} />
       <span className="stack grow" style={{ gap: 2 }}>
         <span className={item.done ? 'done-text' : ''} style={{ fontWeight: 500 }}>
           {item.topic !== 'Todo' ? `${item.topic}: ` : ''}
@@ -181,58 +181,9 @@ export function PlannerView() {
           })}
         </div>
       )}
-      {active.map((p) => {
-        const s = subjects.find((x) => x.id === p.subjectId)
-        const all = p.days.flatMap((d) => d.items)
-        const done = all.filter((i) => i.done).length
-        const late = p.days.filter((d) => d.date < day).flatMap((d) => d.items).filter((i) => !i.done).length
-        return (
-          <section key={p.id} className="card pad stack">
-            <div className="row">
-              {s && <Dot color={s.color} />}
-              <h3 className="grow">
-                Plan: {s?.short} · examen {formatShort(p.examDate)}
-              </h3>
-              <span className="xs muted">{daysBetween(day, p.examDate)} días</span>
-            </div>
-            <div style={{ height: 6, borderRadius: 3, background: 'var(--border)' }}>
-              <div style={{ width: `${all.length ? (done / all.length) * 100 : 0}%`, height: 6, borderRadius: 3, background: s?.color ?? 'var(--accent)' }} />
-            </div>
-            <span className="xs muted">
-              {done} de {all.length} bloques hechos{late > 0 ? ` · ${late} atrasados` : ''}
-            </span>
-            {late > 0 && (
-              <div className="row wrap small" style={{ color: 'var(--danger)' }}>
-                Te has quedado atrás. ¿Lo reajusto con los días que quedan?
-                <button className="btn sm" disabled={busy === p.id} onClick={() => replan(p)}>
-                  {busy === p.id ? 'Reajustando…' : 'Reajustar'}
-                </button>
-              </div>
-            )}
-            <div className="stack" style={{ gap: 8 }}>
-              {p.days.map((d) => (
-                <div key={d.date} className="stack" style={{ gap: 2 }}>
-                  <span className="label" style={d.date === day ? { color: 'var(--accent)' } : undefined}>
-                    {d.date === day ? 'Hoy' : formatShort(d.date)} · {d.items.reduce((a, i) => a + i.minutes, 0)} min
-                  </span>
-                  <div className="list" style={{ opacity: d.date < day ? 0.7 : 1 }}>
-                    {d.items.map((i) => (
-                      <PlanRow key={i.id} plan={p} date={d.date} item={i} subject={s} />
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="row wrap">
-              <button className="btn sm" disabled={busy === p.id} onClick={() => replan(p)}>
-                Rehacer desde hoy
-              </button>
-              <span className="grow" />
-              <ConfirmButton label="Borrar plan" onConfirm={() => db.plans.delete(p.id)} />
-            </div>
-          </section>
-        )
-      })}
+      {active.map((p) => (
+        <PlanCard key={p.id} plan={p} subject={subjects.find((x) => x.id === p.subjectId)} day={day} busy={busy === p.id} onReplan={() => replan(p)} />
+      ))}
       {(active.length > 0 || without.length > 0) && (
         <button className="btn" onClick={() => setCreating('new')}>
           <Icon name="plus" size={16} /> Nuevo plan
@@ -240,6 +191,79 @@ export function PlannerView() {
       )}
       {creating && <PlanSheet exam={creating === 'new' ? undefined : creating} subjects={subjects} onClose={() => setCreating(null)} />}
     </div>
+  )
+}
+
+function PlanCard({ plan: p, subject: s, day, busy, onReplan }: { plan: StudyPlan; subject?: Subject; day: string; busy: boolean; onReplan: () => void }) {
+  const [all, setAll] = useState(false)
+  const items = p.days.flatMap((d) => d.items)
+  const done = items.filter((i) => i.done).length
+  const late = p.days.filter((d) => d.date < day).flatMap((d) => d.items).filter((i) => !i.done).length
+  const pct = items.length ? Math.round((done / items.length) * 100) : 0
+  const left = daysBetween(day, p.examDate)
+  // Por defecto: lo atrasado, hoy y los 3 días siguientes. El resto, plegado.
+  const upcoming = p.days.filter((d) => d.date >= day || d.items.some((i) => !i.done))
+  const shown = all ? p.days : upcoming.slice(0, 4)
+  const hidden = p.days.length - shown.length
+  const color = s?.color ?? 'var(--accent)'
+  return (
+    <section className="card stack" style={{ gap: 0, overflow: 'hidden' }}>
+      <div className="row" style={{ padding: '16px 18px', gap: 14, borderBottom: '1px solid var(--line)' }}>
+        <span className="ring" style={{ ['--p' as string]: pct, ['--c' as string]: color }}>
+          <span>{pct}%</span>
+        </span>
+        <span className="stack grow" style={{ gap: 2 }}>
+          <span className="row" style={{ gap: 8 }}>
+            <h3>{s?.name ?? 'Plan'}</h3>
+            <span className="pill exam">{left === 0 ? 'Hoy' : left === 1 ? 'Mañana' : `En ${left} días`}</span>
+          </span>
+          <span className="xs muted">
+            Examen el {formatShort(p.examDate)} · {done} de {items.length} bloques hechos{late > 0 ? ` · ${late} atrasados` : ''}
+          </span>
+        </span>
+      </div>
+      {late > 0 && (
+        <div className="row wrap small" style={{ padding: '10px 18px', background: 'var(--danger-soft)', color: 'var(--danger)' }}>
+          <span className="grow">Te has quedado atrás. Puedo repartir lo pendiente entre los días que quedan.</span>
+          <button className="btn sm" disabled={busy} onClick={onReplan}>
+            {busy ? 'Reajustando…' : 'Reajustar plan'}
+          </button>
+        </div>
+      )}
+      <div style={{ padding: '4px 18px' }}>
+        {shown.map((d) => {
+          const mins = d.items.reduce((a, i) => a + i.minutes, 0)
+          const dd = Number(d.date.slice(8))
+          const wd = WEEKDAYS[weekday(d.date) - 1].slice(0, 3)
+          return (
+            <div key={d.date} className={`plan-day ${d.date < day ? 'past' : ''}`}>
+              <span className={`plan-date ${d.date === day ? 'today' : ''}`}>
+                {d.date === day ? 'Hoy' : wd}
+                <b>{dd}</b>
+                <span className="mono" style={{ textTransform: 'none', letterSpacing: 0 }}>{mins}′</span>
+              </span>
+              <div className="list">
+                {d.items.map((i) => (
+                  <PlanRow key={i.id} plan={p} date={d.date} item={i} subject={s} />
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <div className="row wrap" style={{ padding: '10px 18px 14px', borderTop: '1px solid var(--line)' }}>
+        {(hidden > 0 || all) && (
+          <button className="btn sm ghost" onClick={() => setAll(!all)}>
+            {all ? 'Ver solo los próximos días' : `Ver el plan completo (${hidden} días más)`}
+          </button>
+        )}
+        <span className="grow" />
+        <button className="btn sm" disabled={busy} onClick={onReplan}>
+          Rehacer desde hoy
+        </button>
+        <ConfirmButton small label="Borrar plan" onConfirm={() => db.plans.delete(p.id)} />
+      </div>
+    </section>
   )
 }
 

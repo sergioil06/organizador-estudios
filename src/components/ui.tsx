@@ -56,7 +56,7 @@ export function SubjectSelect({
 }
 
 /** Botón de borrar que pide un segundo toque para confirmar. */
-export function ConfirmButton({ label = 'Borrar', confirm = '¿Seguro? Toca otra vez', onConfirm }: { label?: string; confirm?: string; onConfirm: () => void }) {
+export function ConfirmButton({ label = 'Borrar', confirm = '¿Seguro? Toca otra vez', onConfirm, small }: { label?: string; confirm?: string; onConfirm: () => void; small?: boolean }) {
   const [armed, setArmed] = useState(false)
   useEffect(() => {
     if (!armed) return
@@ -64,7 +64,7 @@ export function ConfirmButton({ label = 'Borrar', confirm = '¿Seguro? Toca otra
     return () => clearTimeout(t)
   }, [armed])
   return (
-    <button className="btn danger" style={armed ? { background: 'var(--danger-soft)' } : undefined} onClick={() => (armed ? onConfirm() : setArmed(true))}>
+    <button className={`btn danger ${small ? 'sm ghost' : ''}`} style={armed ? { background: 'var(--danger-soft)' } : undefined} onClick={() => (armed ? onConfirm() : setArmed(true))}>
       {armed ? confirm : label}
     </button>
   )
