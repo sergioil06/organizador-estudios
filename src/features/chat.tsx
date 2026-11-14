@@ -96,8 +96,8 @@ export function SummariesView({ subjectId }: { subjectId: string }) {
     setBusy(true)
     try {
       const ctx = await subjectContext(subjectId, topic || undefined, 300_000)
-      if (!ctx.text.trim()) throw new Error('No hay apuntes con texto para resumir. Sube material o escribe notas.')
-      const body = await aiSummary(subject, ctx.text, style)
+      if (!ctx.text.trim() && ctx.files.length === 0) throw new Error('No hay apuntes con texto para resumir. Sube material o escribe notas.')
+      const body = await aiSummary(subject, ctx.text, style, ctx.files)
       const id = uid()
       await db.summaries.add({ id, subjectId, topic: topic || undefined, style, body, createdAt: Date.now() })
       setOpen(id)
