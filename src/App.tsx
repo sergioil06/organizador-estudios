@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { HashRouter, NavLink, Route, Routes } from 'react-router-dom'
-import { Icon } from './components/Icon'
+import { HashRouter, Route, Routes } from 'react-router-dom'
+import { CommandPalette, QuickAdd, SideNav } from './components/shell'
 import { ToastProvider } from './components/ui'
 import { seedIfEmpty } from './seed'
 import Home from './pages/Home'
@@ -14,14 +14,6 @@ import Search from './pages/Search'
 import Study from './pages/Study'
 import Settings from './pages/Settings'
 import { PomodoroTicker } from './features/pomodoro'
-
-const NAV = [
-  { to: '/', icon: 'home', label: 'Inicio' },
-  { to: '/calendario', icon: 'calendar', label: 'Calendario' },
-  { to: '/asignaturas', icon: 'book', label: 'Asignaturas' },
-  { to: '/estudiar', icon: 'timer', label: 'Estudiar' },
-  { to: '/tareas', icon: 'tasks', label: 'Tareas' },
-]
 
 export default function App() {
   const [ready, setReady] = useState(false)
@@ -38,28 +30,7 @@ export default function App() {
       <ToastProvider>
         <PomodoroTicker />
         <div className="app">
-          <nav className="nav" aria-label="Secciones">
-            <span className="brand">Organizador</span>
-            {NAV.map((n) => (
-              <NavLink key={n.to} to={n.to} end={n.to === '/'} className={({ isActive }) => (isActive ? 'active' : '')}>
-                <Icon name={n.icon} />
-                {n.label}
-              </NavLink>
-            ))}
-            <NavLink to="/buscar" className={({ isActive }) => `nav-extra ${isActive ? 'active' : ''}`}>
-              <Icon name="search" />
-              Buscar
-            </NavLink>
-            <NavLink to="/subir" className={({ isActive }) => `nav-extra ${isActive ? 'active' : ''}`}>
-              <Icon name="upload" />
-              Subir archivo
-            </NavLink>
-            <span className="spacer nav-extra" />
-            <NavLink to="/ajustes" className={({ isActive }) => `nav-extra ${isActive ? 'active' : ''}`}>
-              <Icon name="settings" />
-              Ajustes
-            </NavLink>
-          </nav>
+          <SideNav />
           <main className="main">
             <Routes>
               <Route path="/" element={<Home />} />
@@ -76,6 +47,8 @@ export default function App() {
             </Routes>
           </main>
         </div>
+        <QuickAdd />
+        <CommandPalette />
       </ToastProvider>
     </HashRouter>
   )

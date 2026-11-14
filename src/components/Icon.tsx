@@ -20,11 +20,21 @@ const PATHS: Record<string, string> = {
   download: 'M12 4v12M7 11l5 5 5-5M4 20h16',
   check: 'M5 12l5 5 9-10',
   eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  flag: 'M5 21V4M5 4h11l-2 4 2 4H5',
+  layers: 'M12 3l9 5-9 5-9-5zM3 13l9 5 9-5',
+  cloud: 'M7 18a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.4 1.6A3.7 3.7 0 0 1 17.5 18z',
+  sparkle: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z',
+  play: 'M7 4l13 8-13 8z',
+  pin: 'M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21zM12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+  clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
+  chat: 'M4 5h16v11H9l-5 4z',
+  grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
+  arrow: 'M5 12h14M13 6l6 6-6 6',
 }
 
 export function Icon({ name, size = 22 }: { name: keyof typeof PATHS | string; size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d={PATHS[name] ?? ''} />
     </svg>
   )

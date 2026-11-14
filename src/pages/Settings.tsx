@@ -65,7 +65,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="page">
+    <div className="page narrow">
       <div className="row">
         <button className="btn icon ghost hide-desktop" onClick={() => navigate(-1)} aria-label="Volver">
           <Icon name="back" />

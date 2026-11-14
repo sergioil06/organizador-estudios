@@ -80,7 +80,7 @@ export default function Upload() {
   }
 
   return (
-    <div className="page">
+    <div className="page narrow">
       <div className="row">
         <button className="btn icon ghost" onClick={() => navigate(-1)} aria-label="Volver">
           <Icon name="back" />

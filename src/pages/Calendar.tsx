@@ -77,38 +77,51 @@ export default function CalendarPage() {
   return (
     <div className="page">
       <div className="page-head">
-        <h1 style={{ textTransform: view === 'month' ? 'capitalize' : undefined }}>{title}</h1>
-        <div className="row">
-          <button className="btn icon" onClick={() => move(-1)} aria-label="Anterior">
-            <Icon name="left" />
-          </button>
-          <button className="btn sm" onClick={() => setCursor(day)}>
-            Hoy
-          </button>
-          <button className="btn icon" onClick={() => move(1)} aria-label="Siguiente">
-            <Icon name="right" />
+        <div>
+          <span className="label eyebrow">Calendario</span>
+          <h1 style={{ textTransform: view === 'month' ? 'capitalize' : undefined }}>{title}</h1>
+        </div>
+        <div className="row wrap" style={{ gap: 8 }}>
+          <div className="segmented" role="tablist" aria-label="Vista" style={{ minWidth: 220 }}>
+            {(
+              [
+                ['day', 'Día'],
+                ['week', 'Semana'],
+                ['month', 'Mes'],
+              ] as [View, string][]
+            ).map(([v, l]) => (
+              <button key={v} role="tab" aria-selected={view === v} className={view === v ? 'on' : ''} onClick={() => setView(v)}>
+                {l}
+              </button>
+            ))}
+          </div>
+          <div className="row" style={{ gap: 4 }}>
+            <button className="btn icon sm" onClick={() => move(-1)} aria-label="Anterior">
+              <Icon name="left" size={18} />
+            </button>
+            <button className="btn sm" onClick={() => setCursor(day)}>
+              Hoy
+            </button>
+            <button className="btn icon sm" onClick={() => move(1)} aria-label="Siguiente">
+              <Icon name="right" size={18} />
+            </button>
+          </div>
+          <button
+            className="btn sm primary hide-mobile"
+            onClick={() => {
+              setNewDate(view === 'day' ? cursor : undefined)
+              setEventOpen('new')
+            }}
+          >
+            <Icon name="plus" size={16} /> Examen o entrega
           </button>
         </div>
-      </div>
-
-      <div className="segmented" role="tablist" aria-label="Vista">
-        {(
-          [
-            ['day', 'Día'],
-            ['week', 'Semana'],
-            ['month', 'Mes'],
-          ] as [View, string][]
-        ).map(([v, l]) => (
-          <button key={v} role="tab" aria-selected={view === v} className={view === v ? 'on' : ''} onClick={() => setView(v)}>
-            {l}
-          </button>
-        ))}
       </div>
 
       {view === 'week' && <WeekGrid from={from} days={showWeekend ? 7 : 5} items={items} today={day} onOpen={open} />}
       {view === 'week' && (
         <label className="row small muted" style={{ gap: 8 }}>
-          <input type="checkbox" className="check" checked={showWeekend} onChange={(e) => setShowWeekend(e.target.checked)} />
+          <input type="checkbox" className="check square" checked={showWeekend} onChange={(e) => setShowWeekend(e.target.checked)} />
           Mostrar fin de semana
         </label>
       )}
@@ -126,17 +139,7 @@ export default function CalendarPage() {
         />
       )}
 
-      <div className="row wrap">
-        <button
-          className="btn primary"
-          onClick={() => {
-            setNewDate(view === 'day' ? cursor : undefined)
-            setEventOpen('new')
-          }}
-        >
-          <Icon name="plus" size={18} /> Examen o entrega
-        </button>
-      </div>
+
 
       {eventOpen && (
         <EventSheet event={eventOpen === 'new' ? undefined : eventOpen} defaultDate={newDate} subjects={subjects} onClose={() => setEventOpen(null)} />
@@ -154,8 +157,8 @@ function blockStyle(a: AgendaItem, startHour: number): CSSProperties {
     top: top + 1,
     height: Math.max(h - 2, 20),
     borderLeftColor: a.color,
-    background: isEvent ? '#3b2226' : `${a.color}26`,
-    color: isEvent ? '#ffd0c8' : 'var(--text)',
+    background: isEvent ? 'var(--exam-soft)' : `${a.color}26`,
+    color: isEvent ? 'var(--exam)' : 'var(--text)',
   }
 }
 
@@ -184,7 +187,7 @@ function WeekGrid({ from, days, items, today, onOpen }: { from: string; days: nu
               {allDay
                 .filter((a) => a.date === d)
                 .map((a) => (
-                  <button key={a.key} className="month-ev" onClick={() => onOpen(a)} style={{ background: a.source === 'event' ? '#3b2226' : `${a.color}33`, color: a.source === 'event' ? '#ffd0c8' : 'var(--text)', border: 0, cursor: 'pointer', textAlign: 'left' }}>
+                  <button key={a.key} className="month-ev" onClick={() => onOpen(a)} style={{ background: a.source === 'event' ? 'var(--exam-soft)' : `${a.color}33`, color: a.source === 'event' ? 'var(--exam)' : 'var(--text)', border: 0, cursor: 'pointer', textAlign: 'left' }}>
                     {a.title}
                   </button>
                 ))}
@@ -273,7 +276,7 @@ function MonthGrid({ from, month, items, today, onPick }: { from: string; month:
             <button key={d} className={`month-cell ${fromISO(d).getMonth() !== month ? 'out' : ''} ${d === today ? 'today' : ''}`} onClick={() => onPick(d)} aria-label={formatShort(d)}>
               <span className="n">{fromISO(d).getDate()}</span>
               {special.slice(0, 2).map((i) => (
-                <span key={i.key} className="month-ev" style={{ background: i.source === 'event' ? '#3b2226' : `${i.color}33`, color: i.source === 'event' ? '#ffd0c8' : 'var(--text)' }}>
+                <span key={i.key} className="month-ev" style={{ background: i.source === 'event' ? 'var(--exam-soft)' : `${i.color}33`, color: i.source === 'event' ? 'var(--exam)' : 'var(--text)' }}>
                   {i.title}
                 </span>
               ))}

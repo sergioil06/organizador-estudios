@@ -7,8 +7,8 @@ import { Dot } from './ui'
 const BADGE_COLORS: Record<string, [string, string]> = {
   PDF: ['#2b2420', '#f2b266'],
   IMG: ['#1f2a2e', '#59d3c2'],
-  AUD: ['#2a2230', '#d6b8ff'],
-  VID: ['#2a2230', '#d6b8ff'],
+  AUD: ['#1d2230', '#8fb8ff'],
+  VID: ['#1d2230', '#8fb8ff'],
 }
 
 export async function openFile(f: StoredFile) {
@@ -33,7 +33,7 @@ function alertError(err: unknown) {
 
 export function FileItem({ file, subject, onEdit }: { file: StoredFile; subject?: Subject; onEdit?: () => void }) {
   const badge = fileBadge(file.mime, file.name)
-  const [bg, fg] = BADGE_COLORS[badge] ?? ['#232838', '#c9d4ff']
+  const [bg, fg] = BADGE_COLORS[badge] ?? ['#22252c', '#c3c5cc']
   return (
     <div className="list-item">
       <span className="badge" style={{ background: bg, color: fg }}>{badge}</span>

@@ -12,7 +12,7 @@ import { storeFile } from '../lib/storeFile'
 export default function NoteEditor() {
   const { id = '' } = useParams()
   const note = useLiveQuery(() => db.notes.get(id), [id])
-  if (note === undefined) return <div className="page"><Empty>Cargando…</Empty></div>
+  if (note === undefined) return <div className="page narrow"><Empty>Cargando…</Empty></div>
   return <Editor key={note.id} note={note} />
 }
 
@@ -91,7 +91,7 @@ function Editor({ note }: { note: Note }) {
   }
 
   return (
-    <div className="page">
+    <div className="page narrow">
       <div className="row">
         <button className="btn icon ghost" onClick={() => navigate(-1)} aria-label="Volver">
           <Icon name="back" />

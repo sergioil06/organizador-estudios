@@ -102,15 +102,18 @@ export default function Tasks() {
   }
 
   return (
-    <div className="page">
+    <div className="page narrow">
       <div className="page-head">
-        <h1>Tareas</h1>
+        <div>
+          <span className="label eyebrow">Pendientes</span>
+          <h1>Tareas</h1>
+        </div>
         <button className="btn sm primary" onClick={() => setOpen('new')}>
           <Icon name="plus" size={16} /> Nueva
         </button>
       </div>
 
-      <div className="segmented" role="tablist" aria-label="Vista">
+      <div className="tabs" role="tablist" aria-label="Vista">
         {(
           [
             ['hoy', 'Hoy'],
@@ -118,8 +121,8 @@ export default function Tasks() {
             ['todas', 'Todas'],
           ] as [View, string][]
         ).map(([v, l]) => (
-          <button key={v} role="tab" aria-selected={view === v} className={view === v ? 'on' : ''} onClick={() => setView(v)}>
-            {l} · {count(v)}
+          <button key={v} role="tab" aria-selected={view === v} className={`tab ${view === v ? 'on' : ''}`} onClick={() => setView(v)}>
+            {l} <span className="count">{count(v)}</span>
           </button>
         ))}
       </div>
@@ -138,17 +141,16 @@ export default function Tasks() {
       </div>
 
       <form
-        className="row"
+        className="card quick-add"
         onSubmit={(e) => {
           e.preventDefault()
           addQuick()
         }}
       >
+        <Icon name="plus" size={18} />
         <label htmlFor="quick" className="sr-only">Añadir tarea rápida</label>
-        <input id="quick" className="input" value={quick} onChange={(e) => setQuick(e.target.value)} placeholder="Ej. entregar hoja 5 de cálculo el viernes" />
-        <button className="btn icon primary" aria-label="Añadir">
-          <Icon name="plus" />
-        </button>
+        <input id="quick" value={quick} onChange={(e) => setQuick(e.target.value)} placeholder="Nueva tarea: «hoja 5 el viernes #cálculo»" />
+        {quick.trim() && <button className="btn sm primary">Añadir</button>}
       </form>
 
       {pending.length === 0 ? (
