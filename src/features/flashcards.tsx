@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
 import { db, uid, type Flashcard, type Subject } from '../db'
 import { Icon } from '../components/Icon'
-import { ConfirmButton, Dot, Empty, Sheet, useToast } from '../components/ui'
+import { ConfirmButton, Dot, Empty, ErrorNote, Sheet, useToast } from '../components/ui'
 import { useSubjects, useToday } from '../hooks'
 import { aiFlashcards, AiError, aiAvailable, subjectContext } from '../lib/ai'
 import { addDays, today } from '../lib/dates'
@@ -111,14 +111,17 @@ function GenerateSheet({ subject, onClose }: { subject: Subject; onClose: () => 
     return [...new Set([...subject.topics, ...f.map((x) => x.topic), ...n.map((x) => x.topic)].filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }))
   }, [subject.id], [] as string[])
 
+  const [error, setError] = useState<string | null>(null)
   const generate = async () => {
     setBusy(true)
+    setError(null)
     try {
       const n = await generateCards(subject, topic || undefined)
       toast(`${n} tarjetas creadas`)
       onClose()
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'No se pudieron crear')
+      console.error('Flashcards', err)
+      setError(err instanceof Error ? err.message : `No se pudieron crear (${String(err)})`)
     } finally {
       setBusy(false)
     }
@@ -141,6 +144,7 @@ function GenerateSheet({ subject, onClose }: { subject: Subject; onClose: () => 
           {busy ? 'Creando tarjetas…' : 'Crear 15 tarjetas'}
         </button>
         {!hasAi && <span className="xs muted">Activa la IA en Ajustes para crearlas automáticamente.</span>}
+        <ErrorNote error={error} onClose={() => setError(null)} />
       </div>
       <span className="label">O a mano</span>
       <label className="field">

@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useRef, useState } from 'react'
 import { db, uid, type ChatMessage, type Summary } from '../db'
 import { Icon } from '../components/Icon'
-import { ConfirmButton, Empty, useToast } from '../components/ui'
+import { ConfirmButton, Empty, ErrorNote, useToast } from '../components/ui'
 import { useSubjects } from '../hooks'
 import { aiAvailable, aiChat, aiSummary, subjectContext } from '../lib/ai'
 import { renderMarkdown } from '../lib/markdown'
@@ -90,19 +90,24 @@ export function SummariesView({ subjectId }: { subjectId: string }) {
   const [topic, setTopic] = useState('')
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const make = async (style: Summary['style']) => {
     if (!subject) return
     setBusy(true)
+    setError(null)
     try {
       const ctx = await subjectContext(subjectId, topic || undefined, 80_000)
       if (!ctx.text.trim() && ctx.files.length === 0) throw new Error('No hay apuntes con texto para resumir. Sube material o escribe notas.')
       const body = await aiSummary(subject, ctx.text, style, ctx.files)
+      if (!body.trim()) throw new Error('La IA devolvió un resumen vacío. Prueba otra vez.')
       const id = uid()
       await db.summaries.add({ id, subjectId, topic: topic || undefined, style, body, createdAt: Date.now() })
       setOpen(id)
+      toast(style === 'resumen' ? 'Resumen creado' : 'Esquema creado')
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'No se pudo crear')
+      console.error('Resumen', err)
+      setError(err instanceof Error ? err.message : `No se pudo crear (${String(err)})`)
     } finally {
       setBusy(false)
     }
@@ -130,6 +135,7 @@ export function SummariesView({ subjectId }: { subjectId: string }) {
           {busy && <span className="small muted">La IA está leyendo tus apuntes… (suele tardar 30 s - 2 min)</span>}
         </div>
         {!hasAi && <span className="xs muted">Activa la IA en Ajustes.</span>}
+        <ErrorNote error={error} onClose={() => setError(null)} />
       </div>
       {list.map((s) => (
         <section key={s.id} className="card">

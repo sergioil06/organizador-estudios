@@ -113,3 +113,18 @@ export function useToast() {
 export function parseTags(s: string): string[] {
   return [...new Set(s.split(',').map((t) => t.trim().replace(/^#/, '').toLowerCase()).filter(Boolean))]
 }
+
+/** Error que se queda a la vista (los avisos breves se pierden si no estás mirando). */
+export function ErrorNote({ error, onClose }: { error: string | null; onClose?: () => void }) {
+  if (!error) return null
+  return (
+    <div role="alert" className="small" style={{ background: 'var(--danger-soft)', color: 'var(--danger)', borderRadius: 10, padding: '10px 12px', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+      <span style={{ flex: 1 }}>{error}</span>
+      {onClose && (
+        <button className="btn sm ghost" style={{ color: 'inherit', minHeight: 0, padding: '0 4px' }} onClick={onClose} aria-label="Cerrar">
+          ×
+        </button>
+      )}
+    </div>
+  )
+}
