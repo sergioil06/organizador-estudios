@@ -3,6 +3,7 @@ import { HashRouter, Route, Routes } from 'react-router-dom'
 import { CommandPalette, QuickAdd, SideNav } from './components/shell'
 import { ToastProvider } from './components/ui'
 import { FileViewer } from './components/FileViewer'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { seedIfEmpty } from './seed'
 import Home from './pages/Home'
 import CalendarPage from './pages/Calendar'
@@ -33,6 +34,7 @@ export default function App() {
         <div className="app">
           <SideNav />
           <main className="main">
+            <ErrorBoundary>
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/calendario" element={<CalendarPage />} />
@@ -46,6 +48,7 @@ export default function App() {
               <Route path="/ajustes" element={<Settings />} />
               <Route path="*" element={<Home />} />
             </Routes>
+            </ErrorBoundary>
           </main>
         </div>
         <QuickAdd />
