@@ -30,11 +30,12 @@ export class AiError extends Error {}
 type CallOpts = { system?: string; schema?: object; temperature?: number; deadline?: number }
 
 /**
- * Tiempo máximo TOTAL de una petición a la IA, contando reintentos y modelos de reserva.
- * Antes cada intento tenía su propio límite y, sumando reintentos, podía quedarse "leyendo" más de 10 minutos.
+ * Límites de tiempo. La respuesta llega en streaming, así que el límite importante es el de
+ * "sin noticias de Google": mientras la IA vaya escribiendo, se espera.
  */
-export const AI_DEADLINE_MS = 180_000
-const TOO_LATE = 'La IA ha tardado demasiado en responder (más de 3 minutos). Prueba con un tema más pequeño o en un rato.'
+const IDLE_MS = 100_000
+export const AI_DEADLINE_MS = 360_000
+const TOO_LATE = 'Google no respondió a tiempo. Prueba con un tema concreto (menos apuntes de golpe) o en un rato.'
 /** Modelos de reserva del plan gratuito, cada uno con su propia cuota. */
 const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite']
 
@@ -49,84 +50,152 @@ function googleMessage(detail: string): string {
   }
 }
 
+type GeminiChunk = {
+  candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] }; finishReason?: string }[]
+  promptFeedback?: { blockReason?: string }
+  error?: { message?: string }
+}
+
+interface StreamResult {
+  ok: boolean
+  status: number
+  detail: string
+  text: string
+  finishReason: string
+  blockReason: string
+}
+
+/**
+ * Una petición en streaming (SSE). Antes se esperaba la respuesta entera de golpe y, con muchos
+ * apuntes, Google tardaba más que el límite y se perdía todo. Ahora el temporizador se reinicia con
+ * cada trozo que llega, y "pensar" está limitado para que empiece a escribir antes.
+ */
+async function streamOnce(model: string, key: string, body: Record<string, unknown>, deadline: number): Promise<StreamResult> {
+  const ctrl = new AbortController()
+  let idle: ReturnType<typeof setTimeout> | undefined
+  const kick = () => {
+    clearTimeout(idle)
+    idle = setTimeout(() => ctrl.abort(), Math.max(1_000, Math.min(IDLE_MS, deadline - Date.now())))
+  }
+  kick()
+  try {
+    const res = await fetch(`${ENDPOINT}/${model}:streamGenerateContent?alt=sse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    })
+    if (!res.ok || !res.body) {
+      return { ok: false, status: res.status, detail: await res.text().catch(() => ''), text: '', finishReason: '', blockReason: '' }
+    }
+    const reader = res.body.getReader()
+    const dec = new TextDecoder()
+    let buf = ''
+    let text = ''
+    let finishReason = ''
+    let blockReason = ''
+    const handle = (line: string) => {
+      if (!line.startsWith('data:')) return
+      const data = line.slice(5).trim()
+      if (!data) return
+      let c: GeminiChunk
+      try {
+        c = JSON.parse(data)
+      } catch {
+        return
+      }
+      if (c.error?.message) throw new AiError(`La IA falló a mitad de la respuesta (Google: ${c.error.message})`)
+      const cand = c.candidates?.[0]
+      text += cand?.content?.parts?.filter((p) => !p.thought).map((p) => p.text ?? '').join('') ?? ''
+      if (cand?.finishReason) finishReason = cand.finishReason
+      if (c.promptFeedback?.blockReason) blockReason = c.promptFeedback.blockReason
+    }
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      kick()
+      buf += dec.decode(value, { stream: true })
+      let nl: number
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        handle(buf.slice(0, nl).replace(/\r$/, ''))
+        buf = buf.slice(nl + 1)
+      }
+    }
+    handle(buf.trim())
+    return { ok: true, status: res.status, detail: '', text, finishReason, blockReason }
+  } catch (err) {
+    if (err instanceof AiError) throw err
+    if (ctrl.signal.aborted) throw new AiError(TOO_LATE)
+    throw new AiError(`No se pudo contactar con la IA (${err instanceof Error ? err.message : 'error de red'}).`)
+  } finally {
+    clearTimeout(idle)
+  }
+}
+
 async function call(contents: { role: string; parts: Part[] }[], opts: CallOpts = {}): Promise<string> {
   const { key, model } = await getAiSettings()
   if (!key) throw new AiError('Falta la clave de la IA. Añádela en Ajustes.')
   if (!navigator.onLine) throw new AiError('Sin conexión: la IA necesita internet.')
-  const body: Record<string, unknown> = {
-    contents,
-    generationConfig: {
-      temperature: opts.temperature ?? 0.4,
-      maxOutputTokens: 32_768,
-      ...(opts.schema ? { responseMimeType: 'application/json', responseSchema: opts.schema } : {}),
-    },
+  const generationConfig: Record<string, unknown> = {
+    temperature: opts.temperature ?? 0.4,
+    maxOutputTokens: 16_384,
+    // Sin esto, el modelo puede "pensar" minutos sobre todos los apuntes antes de escribir nada.
+    thinkingConfig: { thinkingBudget: 512 },
+    ...(opts.schema ? { responseMimeType: 'application/json', responseSchema: opts.schema } : {}),
   }
+  const body: Record<string, unknown> = { contents, generationConfig }
   if (opts.system) body.systemInstruction = { parts: [{ text: opts.system }] }
 
   // Si el modelo elegido está saturado (5xx) o sin cuota (429, que en el plan gratis es por modelo),
   // se prueba con los siguientes, que tienen su propia cuota gratuita.
   const models = [...new Set([model, ...FALLBACK_MODELS])]
   const deadline = opts.deadline ?? Date.now() + AI_DEADLINE_MS
-  let json: { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] }; finishReason?: string }[]; promptFeedback?: { blockReason?: string } } | null = null
-  let res: Response | null = null
-  let detail = ''
-  let status = 0
+  let r: StreamResult | null = null
+  let lastModel = model
   const seen: number[] = []
   outer: for (const m of models) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const left = deadline - Date.now()
-      if (left < 5_000) throw new AiError(TOO_LATE)
-      // Un único temporizador cubre la petición Y la lectura de la respuesta.
-      const ctrl = new AbortController()
-      const timer = setTimeout(() => ctrl.abort(), left)
+    lastModel = m
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (deadline - Date.now() < 5_000) throw new AiError(TOO_LATE)
       const started = Date.now()
-      try {
-        res = await fetch(`${ENDPOINT}/${m}:generateContent`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-          body: JSON.stringify(body),
-          signal: ctrl.signal,
-        })
-        if (res.ok) json = await res.json()
-        else detail = await res.text().catch(() => '')
-      } catch (err) {
-        if (ctrl.signal.aborted) throw new AiError(TOO_LATE)
-        throw new AiError(`No se pudo contactar con la IA (${err instanceof Error ? err.message : 'error de red'}).`)
-      } finally {
-        clearTimeout(timer)
+      r = await streamOnce(m, key, body, deadline)
+      if (r.ok) break outer
+      seen.push(r.status)
+      console.warn(`Gemini ${m} respondió ${r.status}`, r.detail)
+      // Modelos que no admiten limitar el pensamiento: se repite sin esa opción.
+      if (r.status === 400 && /thinking/i.test(r.detail) && 'thinkingConfig' in generationConfig) {
+        delete generationConfig.thinkingConfig
+        continue
       }
-      if (res.ok) break outer
-      status = res.status
-      seen.push(status)
-      console.warn(`Gemini ${m} respondió ${status}`, detail)
-      if (status === 429 || status === 404) continue outer // siguiente modelo
-      if (![500, 502, 503, 504].includes(status)) break outer // error de la petición: no sirve cambiar de modelo
-      // Un error que tarda mucho (p. ej. 504 por material enorme) no se arregla repitiendo: se para aquí.
-      if (Date.now() - started > 25_000) break outer
+      if (r.status === 429 || r.status === 404) continue outer // siguiente modelo
+      if (![500, 502, 503, 504].includes(r.status)) break outer // error de la petición: no sirve cambiar de modelo
+      if (Date.now() - started > 25_000) break outer // un error lento no se arregla repitiendo
       if (attempt === 0) await wait(2000)
+      else continue outer
     }
   }
-  if (!res || !res.ok || !json) {
+  if (!r || !r.ok) {
+    const status = r?.status ?? 0
+    const detail = r?.detail ?? ''
     const msg = googleMessage(detail)
-    const why = msg ? ` (Google: ${msg.slice(0, 160)})` : ''
+    const why = ` (${lastModel}, error ${status}${msg ? `: ${msg.slice(0, 160)}` : ''})`
     if (status === 400 && /API key/i.test(detail)) throw new AiError('La clave de la IA no es válida. Revísala en Ajustes.')
     if (status === 400 && /token|too large|exceeds|size/i.test(msg)) throw new AiError(`Hay demasiado material de golpe para la IA. Elige un tema concreto.${why}`)
-    if (seen.every((x) => x === 429 || x === 404)) throw new AiError(`Has gastado el límite gratuito de la IA por ahora (se reinicia cada minuto y del todo a las 9:00). Prueba en un rato o con un tema concreto.${why}`)
+    if (seen.length && seen.every((x) => x === 429 || x === 404)) throw new AiError(`Has gastado el límite gratuito de la IA por ahora (se reinicia cada minuto y del todo a las 9:00). Prueba en un rato o con un tema concreto.${why}`)
     if (status === 504) throw new AiError(`Google ha tardado demasiado con tanto material. Prueba con un tema más pequeño.${why}`)
-    if (seen.some((x) => x >= 500)) throw new AiError(`Google no ha podido procesar la petición (error ${status}) ni con los modelos de reserva. Prueba con un tema concreto o en unos minutos.${why}`)
-    throw new AiError(`La IA respondió con un error (${status})${msg ? `: ${msg}` : ''}`)
+    if (seen.some((x) => x >= 500)) throw new AiError(`Google no ha podido procesar la petición ni con los modelos de reserva. Prueba con un tema concreto o en unos minutos.${why}`)
+    throw new AiError(`La IA respondió con un error${why}`)
   }
-  const cand = json?.candidates?.[0]
-  const text: string = cand?.content?.parts?.filter((p) => !p.thought).map((p) => p.text ?? '').join('') ?? ''
-  const reason: string = cand?.finishReason ?? ''
-  if (!text) {
-    console.warn('Gemini sin texto', json)
-    if (json?.promptFeedback?.blockReason) throw new AiError('La IA bloqueó la petición por sus filtros. Prueba con otro tema.')
+  const { text, finishReason: reason, blockReason } = r
+  if (!text.trim()) {
+    if (blockReason) throw new AiError('La IA bloqueó la petición por sus filtros. Prueba con otro tema.')
     if (reason === 'RECITATION') throw new AiError('RECITATION')
     if (reason === 'SAFETY' || reason === 'PROHIBITED_CONTENT') throw new AiError('La IA bloqueó la respuesta por sus filtros. Prueba con otro tema.')
     if (reason === 'MAX_TOKENS') throw new AiError('La respuesta de la IA se cortó. Prueba con un tema concreto en vez de toda la asignatura.')
-    throw new AiError('La IA no devolvió respuesta. Prueba otra vez.')
+    throw new AiError(`La IA no devolvió respuesta (${lastModel}${reason ? `, ${reason}` : ''}). Prueba otra vez.`)
   }
+  // En un resumen, un corte por RECITATION a mitad deja texto útil: se devuelve lo que haya.
+  if (reason === 'RECITATION' && opts.schema) throw new AiError('RECITATION')
   if (reason === 'MAX_TOKENS' && opts.schema) throw new AiError('La respuesta de la IA se cortó. Prueba con un tema concreto en vez de toda la asignatura.')
   return text
 }
@@ -197,7 +266,7 @@ export async function blobToBase64(blob: Blob): Promise<string> {
 const INLINE_TYPES = /^(image\/(png|jpe?g|webp|heic|heif)|application\/pdf|audio\/|video\/)/
 const MAX_INLINE = 18 * 1024 * 1024
 /** Lo que cabe en una petición a Gemini (20 MB en total, y base64 ocupa un 33 % más). */
-const INLINE_BUDGET = 6 * 1024 * 1024
+const INLINE_BUDGET = 4 * 1024 * 1024
 
 /** Convierte un archivo en partes que la IA puede leer (el propio archivo si es imagen/PDF/audio, o su texto). */
 /** Texto real (sin las marcas "[pág. N]" que salen de los PDF escaneados o escritos a mano). */
@@ -277,7 +346,7 @@ Devuelve:
 }
 
 /** Material de una asignatura (o de un tema) para darle contexto a la IA. Nunca tarda más de 30 s. */
-export async function subjectContext(subjectId: string, topic?: string, limit = 400_000): Promise<{ text: string; sources: string[]; files: Part[] }> {
+export async function subjectContext(subjectId: string, topic?: string, limit = 150_000): Promise<{ text: string; sources: string[]; files: Part[] }> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const late = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new AiError('No se pudieron leer tus apuntes de este tema (tardaba demasiado). Prueba otra vez o con otro tema.')), 30_000)

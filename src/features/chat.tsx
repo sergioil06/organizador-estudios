@@ -95,7 +95,7 @@ export function SummariesView({ subjectId }: { subjectId: string }) {
     if (!subject) return
     setBusy(true)
     try {
-      const ctx = await subjectContext(subjectId, topic || undefined, 300_000)
+      const ctx = await subjectContext(subjectId, topic || undefined, 80_000)
       if (!ctx.text.trim() && ctx.files.length === 0) throw new Error('No hay apuntes con texto para resumir. Sube material o escribe notas.')
       const body = await aiSummary(subject, ctx.text, style, ctx.files)
       const id = uid()
@@ -127,7 +127,7 @@ export function SummariesView({ subjectId }: { subjectId: string }) {
           <button className="btn" disabled={busy || !hasAi} onClick={() => make('esquema')}>
             Esquema
           </button>
-          {busy && <span className="small muted">La IA está leyendo tus apuntes… (puede tardar 1-2 min, como mucho 3)</span>}
+          {busy && <span className="small muted">La IA está leyendo tus apuntes… (suele tardar 30 s - 2 min)</span>}
         </div>
         {!hasAi && <span className="xs muted">Activa la IA en Ajustes.</span>}
       </div>

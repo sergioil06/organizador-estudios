@@ -85,7 +85,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [msg, setMsg] = useState<string | null>(null)
   const show = useCallback((m: string) => {
     setMsg(m)
-    window.setTimeout(() => setMsg((cur) => (cur === m ? null : cur)), 2600)
+    // Los avisos largos (errores de la IA) se quedan más tiempo para poder leerlos.
+    window.setTimeout(() => setMsg((cur) => (cur === m ? null : cur)), Math.min(15_000, Math.max(2600, m.length * 70)))
   }, [])
   useEffect(() => {
     const on = (e: Event) => show(String((e as CustomEvent).detail))
