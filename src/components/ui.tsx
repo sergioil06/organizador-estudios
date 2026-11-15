@@ -119,7 +119,7 @@ export function ErrorNote({ error, onClose }: { error: string | null; onClose?: 
   if (!error) return null
   return (
     <div role="alert" className="small" style={{ background: 'var(--danger-soft)', color: 'var(--danger)', borderRadius: 10, padding: '10px 12px', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-      <span style={{ flex: 1 }}>{error}</span>
+      <span style={{ flex: 1, whiteSpace: 'pre-line' }}>{error}</span>
       {onClose && (
         <button className="btn sm ghost" style={{ color: 'inherit', minHeight: 0, padding: '0 4px' }} onClick={onClose} aria-label="Cerrar">
           ×

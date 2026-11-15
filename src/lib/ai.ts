@@ -27,7 +27,9 @@ export interface ChatTurn {
 
 export class AiError extends Error {}
 
-type CallOpts = { system?: string; schema?: object; temperature?: number; deadline?: number }
+type CallOpts = { system?: string; schema?: object; temperature?: number; deadline?: number; onWait?: (msg: string) => void }
+/** Esperas entre vueltas completas a todos los modelos cuando Google está saturado. */
+const ROUND_WAITS = [10_000, 30_000]
 
 /**
  * Límites de tiempo. La respuesta llega en streaming, así que el límite importante es el de
@@ -172,39 +174,55 @@ async function call(contents: { role: string; parts: Part[] }[], opts: CallOpts 
   const body: Record<string, unknown> = { contents, generationConfig }
   if (opts.system) body.systemInstruction = { parts: [{ text: opts.system }] }
 
-  // Si el modelo elegido está saturado (5xx) o sin cuota (429, que en el plan gratis es por modelo),
-  // se prueba con los siguientes, que tienen su propia cuota gratuita.
-  const models = [...new Set([model, ...FALLBACK_MODELS])]
+  // Si el modelo elegido está saturado (5xx, "high demand") o sin cuota (429, que en el plan gratis es
+  // por modelo), se prueba con los siguientes, que tienen su propia cuota gratuita. Si TODOS están
+  // saturados, se espera un poco y se da otra vuelta: los picos de demanda de Google suelen durar poco.
+  let models = [...new Set([model, ...FALLBACK_MODELS])]
   const deadline = opts.deadline ?? Date.now() + AI_DEADLINE_MS
   let r: StreamResult | null = null
   let lastModel = model
   const seen: number[] = []
-  outer: for (const m of models) {
-    lastModel = m
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (deadline - Date.now() < 5_000) throw new AiError(TOO_LATE)
-      const started = Date.now()
-      try {
-        r = await streamOnce(m, key, body, deadline)
-      } catch (err) {
-        logAi({ at: started, model: m, status: 0, ms: Date.now() - started, chars: 0, note: err instanceof Error ? err.message : String(err) })
-        throw err
-      }
-      logAi({ at: started, model: m, status: r.status, ms: Date.now() - started, chars: r.text.length, finish: r.finishReason || r.blockReason || undefined, note: r.ok ? undefined : googleMessage(r.detail).slice(0, 200) })
-      if (r.ok) break outer
-      seen.push(r.status)
-      console.warn(`Gemini ${m} respondió ${r.status}`, r.detail)
-      // Modelos que no admiten limitar el pensamiento: se repite sin esa opción.
-      if (r.status === 400 && /thinking/i.test(r.detail) && 'thinkingConfig' in generationConfig) {
-        delete generationConfig.thinkingConfig
-        continue
-      }
-      if (r.status === 429 || r.status === 404) continue outer // siguiente modelo
-      if (![500, 502, 503, 504].includes(r.status)) break outer // error de la petición: no sirve cambiar de modelo
-      if (Date.now() - started > 25_000) break outer // un error lento no se arregla repitiendo
-      if (attempt === 0) await wait(2000)
-      else continue outer
+  outer: for (let round = 0; round < ROUND_WAITS.length + 1; round++) {
+    if (round > 0) {
+      const pause = ROUND_WAITS[round - 1]
+      if (deadline - Date.now() < pause + 20_000) break
+      opts.onWait?.(`Google está saturado; reintento en ${Math.round(pause / 1000)} s (intento ${round + 1} de ${ROUND_WAITS.length + 1})…`)
+      await wait(pause)
+      opts.onWait?.('')
     }
+    const gone: string[] = []
+    for (const m of models) {
+      lastModel = m
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (deadline - Date.now() < 5_000) throw new AiError(TOO_LATE)
+        const started = Date.now()
+        try {
+          r = await streamOnce(m, key, body, deadline)
+        } catch (err) {
+          logAi({ at: started, model: m, status: 0, ms: Date.now() - started, chars: 0, note: err instanceof Error ? err.message : String(err) })
+          throw err
+        }
+        logAi({ at: started, model: m, status: r.status, ms: Date.now() - started, chars: r.text.length, finish: r.finishReason || r.blockReason || undefined, note: r.ok ? undefined : googleMessage(r.detail).slice(0, 200) })
+        if (r.ok) break outer
+        seen.push(r.status)
+        console.warn(`Gemini ${m} respondió ${r.status}`, r.detail)
+        // Modelos que no admiten limitar el pensamiento: se repite sin esa opción.
+        if (r.status === 400 && /thinking/i.test(r.detail) && 'thinkingConfig' in generationConfig) {
+          delete generationConfig.thinkingConfig
+          continue
+        }
+        if (r.status === 404) {
+          gone.push(m) // este modelo ya no existe: no se vuelve a probar
+          break
+        }
+        if (r.status === 429) break // siguiente modelo
+        if (![500, 502, 503, 504].includes(r.status)) break outer // error de la petición: no sirve cambiar de modelo
+        if (Date.now() - started > 25_000) break outer // un error lento no se arregla repitiendo
+        if (attempt === 0) await wait(1500)
+      }
+    }
+    models = models.filter((m) => !gone.includes(m))
+    if (models.length === 0) break
   }
   if (!r || !r.ok) {
     const status = r?.status ?? 0
@@ -215,7 +233,8 @@ async function call(contents: { role: string; parts: Part[] }[], opts: CallOpts 
     if (status === 400 && /token|too large|exceeds|size/i.test(msg)) throw new AiError(`Hay demasiado material de golpe para la IA. Elige un tema concreto.${why}`)
     if (seen.length && seen.every((x) => x === 429 || x === 404)) throw new AiError(`Has gastado el límite gratuito de la IA por ahora (se reinicia cada minuto y del todo a las 9:00). Prueba en un rato o con un tema concreto.${why}`)
     if (status === 504) throw new AiError(`Google ha tardado demasiado con tanto material. Prueba con un tema más pequeño.${why}`)
-    if (seen.some((x) => x >= 500)) throw new AiError(`Google no ha podido procesar la petición ni con los modelos de reserva. Prueba con un tema concreto o en unos minutos.${why}`)
+    if (status === 503 || status === 500 || status === 502 || (seen.some((x) => x >= 500) && seen.every((x) => x >= 500 || x === 429 || x === 404)))
+      throw new AiError(`Los servidores gratuitos de Gemini están saturados ahora mismo (Google dice «high demand»). Suele pasarse en unos minutos: vuelve a intentarlo luego. (${lastModel}, error ${status})`)
     throw new AiError(`La IA respondió con un error${why}`)
   }
   const { text, finishReason: reason, blockReason } = r
@@ -272,8 +291,8 @@ export function parseJSON<T>(raw: string): T {
   }
 }
 
-async function askJSON<T>(parts: Part[], schema: object, system?: string, temperature?: number): Promise<T> {
-  const raw = await ask(parts, { schema, system, temperature })
+async function askJSON<T>(parts: Part[], schema: object, system?: string, temperature?: number, onWait?: (msg: string) => void): Promise<T> {
+  const raw = await ask(parts, { schema, system, temperature, onWait })
   return parseJSON<T>(raw)
 }
 
@@ -552,6 +571,7 @@ export async function aiExercises(args: {
   folders: string[]
   pages: { page: number; image?: string; text?: string }[]
   totalPages: number
+  onWait?: (msg: string) => void
 }): Promise<FoundExercise[]> {
   const parts: Part[] = []
   for (const p of args.pages) {
@@ -589,7 +609,7 @@ Ignora tachones, garabatos y cabeceras. Si no hay ningún ejercicio, devuelve la
     },
     required: ['exercises'],
   }
-  const r = await askJSON<unknown>([...parts, { text: prompt }], schema, SYSTEM, 0.2)
+  const r = await askJSON<unknown>([...parts, { text: prompt }], schema, SYSTEM, 0.2, args.onWait)
   return asList<FoundExercise>(r, 'exercises').filter((e) => e && (e.continues ? e.solution?.trim() || e.statement?.trim() : e.statement?.trim() || e.solution?.trim()))
 }
 
