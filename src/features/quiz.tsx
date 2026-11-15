@@ -28,7 +28,7 @@ export function QuizView({ only }: { only?: string }) {
     if (!subject) return
     setBusy(true)
     try {
-      const ctx = await subjectContext(subject.id, topic || undefined, 200_000)
+      const ctx = await subjectContext(subject.id, topic || undefined, 80_000)
       if (!ctx.text.trim() && ctx.files.length === 0) throw new Error('No hay apuntes con texto para hacer el test. Sube material primero.')
       const exams = (await db.files.where('subjectId').equals(subject.id).filter((f) => f.kind === 'examen').toArray()).map((f) => f.text).join('\n\n')
       const q = await aiQuiz(subject, ctx.text, count, exams || undefined, ctx.files)
