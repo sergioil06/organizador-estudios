@@ -74,6 +74,7 @@ export interface AnalyzeProgress {
 interface ResumeState {
   next: number
   total: number
+  topic?: string
 }
 const resumeKey = (fileId: string) => `exercises-resume:${fileId}`
 export async function getResume(fileId: string): Promise<ResumeState | undefined> {
@@ -86,14 +87,22 @@ export async function getResume(fileId: string): Promise<ResumeState | undefined
  * analizar desde el principio, los ejercicios anteriores del archivo se sustituyen (los que se movieron
  * a mano a otra carpeta conservan esa carpeta).
  */
-export async function analyzeFile(file: StoredFile, subject: Subject, onProgress: (p: AnalyzeProgress) => void, resume = false): Promise<number> {
+export async function analyzeFile(
+  file: StoredFile,
+  subject: Subject,
+  onProgress: (p: AnalyzeProgress) => void,
+  opts: { resume?: boolean; topic?: string } = {},
+): Promise<number> {
   const blob = await ensureBlob(file)
-  const saved = resume ? await getResume(file.id) : undefined
+  const saved = opts.resume ? await getResume(file.id) : undefined
+  // Tema elegido al analizar; si no, el del archivo; si tampoco, lo decide la IA para cada ejercicio.
+  const fixedTopic = (opts.resume ? saved?.topic : opts.topic) || file.topic || undefined
   const previous = await db.exercises.where('fileId').equals(file.id).toArray()
   const all = await db.exercises.where('subjectId').equals(subject.id).toArray()
   const folders = new Set(all.filter((e) => saved || e.fileId !== file.id).map((e) => e.folder))
   // Carpetas elegidas a mano para ejercicios de este archivo (se respetan al volver a analizar).
-  const manual = new Map(previous.map((e) => [`${e.page}|${norm(e.title)}`, e.folder]))
+  const manual = new Map(previous.map((e) => [`${e.page}|${norm(e.title)}`, e]))
+  const topics = await knownTopics(subject)
 
   const isPdf = file.mime === 'application/pdf' || /\.pdf$/i.test(file.name)
   const reader = isPdf ? await pdfPages(blob) : null
@@ -116,6 +125,8 @@ export async function analyzeFile(file: StoredFile, subject: Subject, onProgress
         subject,
         fileName: file.name,
         folders: [...folders],
+        topics,
+        fixedTopic,
         pages,
         totalPages: total,
         onWait: (msg) => {
@@ -136,10 +147,14 @@ export async function analyzeFile(file: StoredFile, subject: Subject, onProgress
         folders.add(folder)
         const page = clampPage(ex.page, pages[0].page, total)
         const title = ex.title?.trim() || `Ejercicio pág. ${page}`
+        const topic = fixedTopic ?? matchTopic(ex.topic, topics)
+        if (topic && !topics.includes(topic)) topics.push(topic)
+        const before = manual.get(`${page}|${norm(title)}`)
         rows.push({
           id: uid(),
           subjectId: subject.id,
-          folder: manual.get(`${page}|${norm(title)}`) ?? folder,
+          topic: before ? before.topic : topic,
+          folder: before?.folder ?? folder,
           title,
           statement: ex.statement?.trim() ?? '',
           solution: ex.solution?.trim() || undefined,
@@ -155,7 +170,7 @@ export async function analyzeFile(file: StoredFile, subject: Subject, onProgress
       found += rows.length
       if (rows.length) last = rows.at(-1)
       wait = ''
-      if (start + PAGES_PER_CALL <= total) await db.settings.put({ key: resumeKey(file.id), value: { next: start + PAGES_PER_CALL, total } })
+      if (start + PAGES_PER_CALL <= total) await db.settings.put({ key: resumeKey(file.id), value: { next: start + PAGES_PER_CALL, total, topic: opts.topic ?? saved?.topic } })
     }
   } catch (err) {
     reader?.done()
@@ -164,13 +179,55 @@ export async function analyzeFile(file: StoredFile, subject: Subject, onProgress
       await db.settings.delete(resumeKey(file.id))
       throw err
     }
-    await db.settings.put({ key: resumeKey(file.id), value: { next: start, total } })
+    await db.settings.put({ key: resumeKey(file.id), value: { next: start, total, topic: opts.topic ?? saved?.topic } })
     throw new Error(`${why}\n\nLo ya leído está guardado: ${found} ${found === 1 ? 'ejercicio' : 'ejercicios'} de las págs. 1-${start - 1}. Cuando quieras, pulsa «Continuar desde pág. ${start}» y seguirá por ahí.`)
   }
   reader?.done()
   await db.settings.delete(resumeKey(file.id))
+  // Si el archivo no tenía tema y todo salió de uno solo, se le pone ese tema también al archivo.
+  if (!file.topic) {
+    const mine = new Set((await db.exercises.where('fileId').equals(file.id).toArray()).map((e) => e.topic).filter(Boolean))
+    if (mine.size === 1) await db.files.update(file.id, { topic: [...mine][0] })
+  }
   onProgress({ done: total, total, found })
   return found
+}
+
+/** Temas de la asignatura: los que escribiste en ella, más los de sus archivos y ejercicios. */
+export async function knownTopics(subject: Subject): Promise<string[]> {
+  const [files, exercises] = await Promise.all([db.files.where('subjectId').equals(subject.id).toArray(), db.exercises.where('subjectId').equals(subject.id).toArray()])
+  const out: string[] = []
+  for (const t of [...subject.topics, ...files.map((f) => f.topic), ...exercises.map((e) => e.topic)]) {
+    const v = t?.trim()
+    if (v && !out.some((o) => norm(o) === norm(v))) out.push(v)
+  }
+  return out
+}
+
+/** Ordena los temas como en la asignatura y, si no, por número ("Tema 2" antes que "Tema 10"). */
+export function sortTopics(list: string[], subjectTopics: string[]): string[] {
+  const idx = (t: string) => {
+    const i = subjectTopics.findIndex((s) => norm(s) === norm(t))
+    return i < 0 ? 999 : i
+  }
+  return [...list].sort((a, b) => idx(a) - idx(b) || a.localeCompare(b, 'es', { numeric: true }))
+}
+
+/** Lleva el tema que dice la IA a uno de los que ya existen ("integrales" → "Tema 2 · Integrales"). */
+export function matchTopic(raw: string | undefined, topics: string[]): string | undefined {
+  const name = (raw ?? '').trim().replace(/\s+/g, ' ')
+  if (!name) return undefined
+  const n = norm(name)
+  const exact = topics.find((t) => norm(t) === n)
+  if (exact) return exact
+  const bare = (t: string) => norm(t).replace(/^(tema|t|unidad)\s*\d+\s*[·.:\-–]?\s*/, '')
+  const num = n.match(/^(?:tema|t|unidad)\s*(\d+)/)?.[1]
+  const loose = topics.find((t) => {
+    if (bare(t) && bare(t) === bare(name)) return true
+    if (num && norm(t).match(/^(?:tema|t|unidad)\s*(\d+)/)?.[1] === num) return true
+    return bare(name).length >= 5 && (bare(t).includes(bare(name)) || bare(name).includes(bare(t)) && bare(t).length >= 5)
+  })
+  return loose ?? name.charAt(0).toUpperCase() + name.slice(1)
 }
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
