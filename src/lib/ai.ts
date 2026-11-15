@@ -41,6 +41,32 @@ const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+/** Registro de las últimas llamadas a la IA (solo en este dispositivo), visible en Ajustes para diagnosticar. */
+export interface AiLogEntry {
+  at: number
+  model: string
+  status: number
+  ms: number
+  chars: number
+  finish?: string
+  note?: string
+}
+const LOG_KEY = 'ai-log'
+export function aiLog(): AiLogEntry[] {
+  try {
+    return JSON.parse(localStorage.getItem(LOG_KEY) ?? '[]') as AiLogEntry[]
+  } catch {
+    return []
+  }
+}
+function logAi(e: AiLogEntry) {
+  try {
+    localStorage.setItem(LOG_KEY, JSON.stringify([e, ...aiLog()].slice(0, 8)))
+  } catch {
+    /* sin almacenamiento: no pasa nada */
+  }
+}
+
 /** Mensaje de error de Google (si lo hay) para enseñarlo tal cual. */
 function googleMessage(detail: string): string {
   try {
@@ -158,7 +184,13 @@ async function call(contents: { role: string; parts: Part[] }[], opts: CallOpts 
     for (let attempt = 0; attempt < 3; attempt++) {
       if (deadline - Date.now() < 5_000) throw new AiError(TOO_LATE)
       const started = Date.now()
-      r = await streamOnce(m, key, body, deadline)
+      try {
+        r = await streamOnce(m, key, body, deadline)
+      } catch (err) {
+        logAi({ at: started, model: m, status: 0, ms: Date.now() - started, chars: 0, note: err instanceof Error ? err.message : String(err) })
+        throw err
+      }
+      logAi({ at: started, model: m, status: r.status, ms: Date.now() - started, chars: r.text.length, finish: r.finishReason || r.blockReason || undefined, note: r.ok ? undefined : googleMessage(r.detail).slice(0, 200) })
       if (r.ok) break outer
       seen.push(r.status)
       console.warn(`Gemini ${m} respondió ${r.status}`, r.detail)

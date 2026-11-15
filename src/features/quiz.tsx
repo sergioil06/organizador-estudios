@@ -1,14 +1,13 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
 import { db, type Subject } from '../db'
-import { Empty, useToast } from '../components/ui'
+import { Empty, ErrorNote } from '../components/ui'
 import { useSubjects } from '../hooks'
 import { aiAvailable, aiQuiz, subjectContext, type QuizQuestion } from '../lib/ai'
 import { renderMarkdown } from '../lib/markdown'
 
 export function QuizView({ only }: { only?: string }) {
   const subjects = useSubjects()
-  const toast = useToast()
   const active = subjects.filter((s) => (only ? s.id === only : s.status === 'active'))
   const [subjectId, setSubjectId] = useState(only ?? '')
   const subject: Subject | undefined = subjects.find((s) => s.id === (subjectId || active[0]?.id))
@@ -24,9 +23,11 @@ export function QuizView({ only }: { only?: string }) {
     return [...new Set([...subject.topics, ...f.map((x) => x.topic)].filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }))
   }, [subject?.id], [] as string[])
 
+  const [error, setError] = useState<string | null>(null)
   const start = async () => {
     if (!subject) return
     setBusy(true)
+    setError(null)
     try {
       const ctx = await subjectContext(subject.id, topic || undefined, 80_000)
       if (!ctx.text.trim() && ctx.files.length === 0) throw new Error('No hay apuntes con texto para hacer el test. Sube material primero.')
@@ -35,7 +36,8 @@ export function QuizView({ only }: { only?: string }) {
       setQs(q.filter((x) => x.options?.length >= 2))
       setAnswers(q.map(() => null))
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'No se pudo crear el test')
+      console.error('Test', err)
+      setError(err instanceof Error ? err.message : `No se pudo crear el test (${String(err)})`)
     } finally {
       setBusy(false)
     }
@@ -133,6 +135,7 @@ export function QuizView({ only }: { only?: string }) {
         {busy ? 'Preparando el test…' : 'Empezar test'}
       </button>
       {!hasAi && <span className="xs muted">Activa la IA en Ajustes para usar los tests.</span>}
+      <ErrorNote error={error} onClose={() => setError(null)} />
     </div>
   )
 }

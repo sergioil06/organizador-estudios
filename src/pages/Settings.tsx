@@ -5,7 +5,7 @@ import { db, type ClassSlot } from '../db'
 import { Icon } from '../components/Icon'
 import { useToast } from '../components/ui'
 import { useSubjects } from '../hooks'
-import { aiTest, DEFAULT_MODEL } from '../lib/ai'
+import { aiLog, aiTest, DEFAULT_MODEL } from '../lib/ai'
 import { downloadBlob, exportAll, importAll } from '../lib/backup'
 import { formatShort, today, WEEKDAYS } from '../lib/dates'
 import { connectGoogle, disconnectGoogle, googleConfigured } from '../lib/google'
@@ -32,6 +32,7 @@ export default function Settings() {
   const [calTasks, setCalTasks] = useSetting('calendarTasks', true)
   const email = useLiveQuery(() => db.settings.get('googleEmail'), [])?.value as string | undefined
   const [sync, setSync] = useState<SyncState>({ status: 'off' })
+  const [showLog, setShowLog] = useState(false)
   const [testing, setTesting] = useState(false)
   const [keyDraft, setKeyDraft] = useState<string | null>(null)
   const [usage, setUsage] = useState<string>('')
@@ -163,11 +164,26 @@ export default function Settings() {
           >
             {testing ? 'Probando…' : 'Probar la IA'}
           </button>
+          <button className="btn sm ghost" onClick={() => setShowLog(!showLog)}>
+            {showLog ? 'Ocultar registro' : 'Ver registro de la IA'}
+          </button>
           <label className="row small muted" style={{ gap: 6 }}>
             Modelo
             <input id="ai-model" className="input" style={{ width: 200, minHeight: 36 }} value={model} placeholder={DEFAULT_MODEL} onChange={(e) => setModel(e.target.value.trim())} />
           </label>
         </div>
+        {showLog && (
+          <div className="stack xs muted" style={{ gap: 4, fontFamily: 'ui-monospace, monospace' }}>
+            <span>Versión de la app: {__BUILD__}</span>
+            {aiLog().length === 0 && <span>Aún no hay llamadas registradas en este dispositivo.</span>}
+            {aiLog().map((e, k) => (
+              <span key={k}>
+                {new Date(e.at).toLocaleTimeString('es')} · {e.model} · {e.status || 'sin respuesta'} · {(e.ms / 1000).toFixed(1)} s · {e.chars} car.{e.finish ? ` · ${e.finish}` : ''}
+                {e.note ? ` · ${e.note}` : ''}
+              </span>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="card pad stack">
