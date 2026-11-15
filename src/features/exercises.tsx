@@ -6,7 +6,7 @@ import { openFile } from '../components/files'
 import { ConfirmButton, Empty, ErrorNote, Sheet, useToast } from '../components/ui'
 import { useSubjects } from '../hooks'
 import { aiAvailable } from '../lib/ai'
-import { analyzeFile, canAnalyze, cleanFolder, type AnalyzeProgress } from '../lib/exercises'
+import { analyzeFile, canAnalyze, cleanFolder, getResume, type AnalyzeProgress } from '../lib/exercises'
 import { renderMarkdown } from '../lib/markdown'
 import { storeFile } from '../lib/storeFile'
 
@@ -265,17 +265,25 @@ function AnalyzeSheet({ subjectId, onClose, onDone }: { subjectId: string; onClo
     for (const e of await db.exercises.where('subjectId').equals(subjectId).toArray()) if (e.fileId) m[e.fileId] = (m[e.fileId] ?? 0) + 1
     return m
   }, [subjectId], {} as Record<string, number>)
+  const resumes = useLiveQuery(async () => {
+    const m: Record<string, number> = {}
+    for (const f of await db.files.where('subjectId').equals(subjectId).toArray()) {
+      const r = await getResume(f.id)
+      if (r) m[f.id] = r.next
+    }
+    return m
+  }, [subjectId], {} as Record<string, number>)
   const [busy, setBusy] = useState<{ name: string; p: AnalyzeProgress } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const list = files.filter(canAnalyze).sort((a, b) => Number(b.kind === 'ejercicios') - Number(a.kind === 'ejercicios') || b.createdAt - a.createdAt)
 
-  const run = async (f: StoredFile) => {
+  const run = async (f: StoredFile, resume = false) => {
     if (!subject || busy) return
     setError(null)
     setBusy({ name: f.name, p: { done: 0, total: 1, found: 0 } })
     try {
-      const n = await analyzeFile(f, subject, (p) => setBusy({ name: f.name, p }))
+      const n = await analyzeFile(f, subject, (p) => setBusy({ name: f.name, p }), resume)
       toast(n ? `${n} ${n === 1 ? 'ejercicio clasificado' : 'ejercicios clasificados'}` : 'La IA no encontró ejercicios en ese archivo')
       if (n) {
         onDone()
@@ -311,7 +319,11 @@ function AnalyzeSheet({ subjectId, onClose, onDone }: { subjectId: string; onClo
           <span className="ex-bar" aria-hidden="true">
             <span style={{ width: `${Math.max(4, (busy.p.done / busy.p.total) * 100)}%` }} />
           </span>
-          <span className="xs muted">Cada bloque de 5 páginas tarda unos 20-60 s. No cierres la app.</span>
+          {busy.p.wait ? (
+            <span className="small" style={{ color: 'var(--warn)' }}>{busy.p.wait}</span>
+          ) : (
+            <span className="xs muted">Cada bloque de 5 páginas tarda unos 20-60 s y se guarda al terminar. No cierres la app.</span>
+          )}
         </div>
       ) : (
         <>
@@ -343,9 +355,20 @@ function AnalyzeSheet({ subjectId, onClose, onDone }: { subjectId: string; onClo
                       {counts[f.id] ? ` · ${counts[f.id]} ejercicios ya sacados` : ''}
                     </span>
                   </span>
-                  <button className="btn sm" disabled={!hasAi} onClick={() => run(f)}>
-                    {counts[f.id] ? 'Volver a analizar' : 'Analizar'}
-                  </button>
+                  {resumes[f.id] ? (
+                    <span className="row" style={{ gap: 6 }}>
+                      <button className="btn sm primary" disabled={!hasAi} onClick={() => run(f, true)}>
+                        Continuar desde pág. {resumes[f.id]}
+                      </button>
+                      <button className="btn sm ghost" disabled={!hasAi} onClick={() => run(f)}>
+                        Empezar de cero
+                      </button>
+                    </span>
+                  ) : (
+                    <button className="btn sm" disabled={!hasAi} onClick={() => run(f)}>
+                      {counts[f.id] ? 'Volver a analizar' : 'Analizar'}
+                    </button>
+                  )}
                 </div>
               ))
             )}
