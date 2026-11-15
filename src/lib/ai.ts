@@ -27,9 +27,14 @@ export interface ChatTurn {
 
 export class AiError extends Error {}
 
-type CallOpts = { system?: string; schema?: object; temperature?: number }
+type CallOpts = { system?: string; schema?: object; temperature?: number; deadline?: number }
 
-const TIMEOUT_MS = 150_000
+/**
+ * Tiempo máximo TOTAL de una petición a la IA, contando reintentos y modelos de reserva.
+ * Antes cada intento tenía su propio límite y, sumando reintentos, podía quedarse "leyendo" más de 10 minutos.
+ */
+export const AI_DEADLINE_MS = 180_000
+const TOO_LATE = 'La IA ha tardado demasiado en responder (más de 3 minutos). Prueba con un tema más pequeño o en un rato.'
 /** Modelos de reserva del plan gratuito, cada uno con su propia cuota. */
 const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite']
 
@@ -61,15 +66,20 @@ async function call(contents: { role: string; parts: Part[] }[], opts: CallOpts 
   // Si el modelo elegido está saturado (5xx) o sin cuota (429, que en el plan gratis es por modelo),
   // se prueba con los siguientes, que tienen su propia cuota gratuita.
   const models = [...new Set([model, ...FALLBACK_MODELS])]
+  const deadline = opts.deadline ?? Date.now() + AI_DEADLINE_MS
+  let json: { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] }; finishReason?: string }[]; promptFeedback?: { blockReason?: string } } | null = null
   let res: Response | null = null
   let detail = ''
   let status = 0
   const seen: number[] = []
   outer: for (const m of models) {
     for (let attempt = 0; attempt < 2; attempt++) {
-      // Sin límite de tiempo, una petición colgada dejaba el botón "pensando" para siempre.
+      const left = deadline - Date.now()
+      if (left < 5_000) throw new AiError(TOO_LATE)
+      // Un único temporizador cubre la petición Y la lectura de la respuesta.
       const ctrl = new AbortController()
-      const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
+      const timer = setTimeout(() => ctrl.abort(), left)
+      const started = Date.now()
       try {
         res = await fetch(`${ENDPOINT}/${m}:generateContent`, {
           method: 'POST',
@@ -77,34 +87,37 @@ async function call(contents: { role: string; parts: Part[] }[], opts: CallOpts 
           body: JSON.stringify(body),
           signal: ctrl.signal,
         })
+        if (res.ok) json = await res.json()
+        else detail = await res.text().catch(() => '')
       } catch (err) {
-        if (ctrl.signal.aborted) throw new AiError('La IA ha tardado demasiado en responder. Prueba con un tema concreto en vez de toda la asignatura.')
+        if (ctrl.signal.aborted) throw new AiError(TOO_LATE)
         throw new AiError(`No se pudo contactar con la IA (${err instanceof Error ? err.message : 'error de red'}).`)
       } finally {
         clearTimeout(timer)
       }
       if (res.ok) break outer
       status = res.status
-      detail = await res.text().catch(() => '')
       seen.push(status)
       console.warn(`Gemini ${m} respondió ${status}`, detail)
       if (status === 429 || status === 404) continue outer // siguiente modelo
       if (![500, 502, 503, 504].includes(status)) break outer // error de la petición: no sirve cambiar de modelo
+      // Un error que tarda mucho (p. ej. 504 por material enorme) no se arregla repitiendo: se para aquí.
+      if (Date.now() - started > 25_000) break outer
       if (attempt === 0) await wait(2000)
     }
   }
-  if (!res || !res.ok) {
+  if (!res || !res.ok || !json) {
     const msg = googleMessage(detail)
     const why = msg ? ` (Google: ${msg.slice(0, 160)})` : ''
     if (status === 400 && /API key/i.test(detail)) throw new AiError('La clave de la IA no es válida. Revísala en Ajustes.')
     if (status === 400 && /token|too large|exceeds|size/i.test(msg)) throw new AiError(`Hay demasiado material de golpe para la IA. Elige un tema concreto.${why}`)
     if (seen.every((x) => x === 429 || x === 404)) throw new AiError(`Has gastado el límite gratuito de la IA por ahora (se reinicia cada minuto y del todo a las 9:00). Prueba en un rato o con un tema concreto.${why}`)
+    if (status === 504) throw new AiError(`Google ha tardado demasiado con tanto material. Prueba con un tema más pequeño.${why}`)
     if (seen.some((x) => x >= 500)) throw new AiError(`Google no ha podido procesar la petición (error ${status}) ni con los modelos de reserva. Prueba con un tema concreto o en unos minutos.${why}`)
     throw new AiError(`La IA respondió con un error (${status})${msg ? `: ${msg}` : ''}`)
   }
-  const json = await res.json()
   const cand = json?.candidates?.[0]
-  const text: string = cand?.content?.parts?.filter((p: { thought?: boolean }) => !p.thought).map((p: { text?: string }) => p.text ?? '').join('') ?? ''
+  const text: string = cand?.content?.parts?.filter((p) => !p.thought).map((p) => p.text ?? '').join('') ?? ''
   const reason: string = cand?.finishReason ?? ''
   if (!text) {
     console.warn('Gemini sin texto', json)
@@ -123,6 +136,7 @@ async function call(contents: { role: string; parts: Part[] }[], opts: CallOpts 
  * algo frecuente con definiciones y teoremas. Se reintenta pidiéndole que lo redacte con sus palabras.
  */
 async function ask(parts: Part[], opts: CallOpts = {}) {
+  opts = { ...opts, deadline: opts.deadline ?? Date.now() + AI_DEADLINE_MS }
   try {
     return await call([{ role: 'user', parts }], opts)
   } catch (err) {
@@ -262,8 +276,20 @@ Devuelve:
   }
 }
 
-/** Material de una asignatura (o de un tema) en forma de texto para darle contexto a la IA. */
+/** Material de una asignatura (o de un tema) para darle contexto a la IA. Nunca tarda más de 30 s. */
 export async function subjectContext(subjectId: string, topic?: string, limit = 400_000): Promise<{ text: string; sources: string[]; files: Part[] }> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new AiError('No se pudieron leer tus apuntes de este tema (tardaba demasiado). Prueba otra vez o con otro tema.')), 30_000)
+  })
+  try {
+    return await Promise.race([readSubjectContext(subjectId, topic, limit), late])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function readSubjectContext(subjectId: string, topic?: string, limit = 400_000): Promise<{ text: string; sources: string[]; files: Part[] }> {
   const [files, notes] = await Promise.all([db.files.where('subjectId').equals(subjectId).toArray(), db.notes.where('subjectId').equals(subjectId).toArray()])
   const match = (t?: string) => !topic || (t ?? '').toLowerCase() === topic.toLowerCase()
   const chunks: string[] = []

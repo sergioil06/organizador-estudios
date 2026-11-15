@@ -127,7 +127,7 @@ export function SummariesView({ subjectId }: { subjectId: string }) {
           <button className="btn" disabled={busy || !hasAi} onClick={() => make('esquema')}>
             Esquema
           </button>
-          {busy && <span className="small muted">Leyendo tus apuntes…</span>}
+          {busy && <span className="small muted">La IA está leyendo tus apuntes… (puede tardar 1-2 min, como mucho 3)</span>}
         </div>
         {!hasAi && <span className="xs muted">Activa la IA en Ajustes.</span>}
       </div>
