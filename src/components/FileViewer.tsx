@@ -13,11 +13,13 @@ export function FileViewer() {
   const [file, setFile] = useState<StoredFile | null>(null)
   const [blob, setBlob] = useState<Blob | null>(null)
   const [error, setError] = useState('')
+  const [atPage, setAtPage] = useState<number | undefined>()
 
   useEffect(() => {
     const on = (e: Event) => {
-      const f = (e as CustomEvent<StoredFile>).detail
+      const { atPage: page, ...f } = (e as CustomEvent<StoredFile & { atPage?: number }>).detail
       setFile(f)
+      setAtPage(page)
       setBlob(null)
       setError('')
       ensureBlob(f)
@@ -63,7 +65,7 @@ export function FileViewer() {
         ) : !blob ? (
           <p className="viewer-msg muted">Abriendo…</p>
         ) : isPdf ? (
-          <PdfPages blob={blob} />
+          <PdfPages blob={blob} page={atPage} />
         ) : mime.startsWith('image/') ? (
           <BlobMedia blob={blob} kind="img" name={file.name} />
         ) : mime.startsWith('audio/') ? (
@@ -104,7 +106,7 @@ function TextView({ blob }: { blob: Blob }) {
   return <pre className="viewer-text">{text}</pre>
 }
 
-function PdfPages({ blob }: { blob: Blob }) {
+function PdfPages({ blob, page: startPage }: { blob: Blob; page?: number }) {
   const ref = useRef<HTMLDivElement>(null)
   const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading')
 
@@ -159,6 +161,8 @@ function PdfPages({ blob }: { blob: Blob }) {
           box.appendChild(holder)
           io.observe(holder)
         }
+        // Abrir directamente en la página pedida (p. ej. la de un ejercicio).
+        if (startPage && startPage > 1) box.querySelector<HTMLElement>(`[data-page="${startPage}"]`)?.scrollIntoView({ block: 'start' })
         cleanup = () => {
           io.disconnect()
           void task.destroy()
@@ -172,7 +176,7 @@ function PdfPages({ blob }: { blob: Blob }) {
       cancelled = true
       cleanup()
     }
-  }, [blob])
+  }, [blob, startPage])
 
   return (
     <>

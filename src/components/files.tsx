@@ -10,9 +10,9 @@ const BADGE_COLORS: Record<string, [string, string]> = {
   VID: ['#1d2230', '#8fb8ff'],
 }
 
-/** Abre el archivo en el visor de la app (ver FileViewer). */
-export function openFile(f: StoredFile) {
-  window.dispatchEvent(new CustomEvent('open-file', { detail: f }))
+/** Abre el archivo en el visor de la app (ver FileViewer), opcionalmente en una página concreta. */
+export function openFile(f: StoredFile, page?: number) {
+  window.dispatchEvent(new CustomEvent('open-file', { detail: { ...f, atPage: page } }))
 }
 
 export function FileItem({ file, subject, onEdit }: { file: StoredFile; subject?: Subject; onEdit?: () => void }) {
