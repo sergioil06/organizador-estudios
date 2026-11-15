@@ -532,6 +532,67 @@ Reglas: reparte los temas entre los días (más tiempo a los temas largos o dif�
   return asList<PlanDay>(r, 'days').filter((d) => d?.date && Array.isArray(d.items))
 }
 
+export interface FoundExercise {
+  page: number
+  folder: string
+  title: string
+  statement: string
+  solution?: string
+  /** true si es la continuación de un ejercicio que empezaba antes de estas páginas. */
+  continues?: boolean
+}
+
+/**
+ * Lee unas páginas de ejercicios (fotos de las páginas, que suelen estar escritas a mano en Samsung Notes)
+ * y devuelve cada ejercicio con su carpeta (tipo de ejercicio). Reutiliza las carpetas que ya existen.
+ */
+export async function aiExercises(args: {
+  subject: Subject
+  fileName: string
+  folders: string[]
+  pages: { page: number; image?: string; text?: string }[]
+  totalPages: number
+}): Promise<FoundExercise[]> {
+  const parts: Part[] = []
+  for (const p of args.pages) {
+    parts.push({ text: `--- Página ${p.page} de ${args.totalPages} ---${p.text && usefulText(p.text).length > 40 ? `\nTexto de la página (puede estar incompleto):\n${usefulText(p.text).slice(0, 6000)}` : ''}` })
+    if (p.image) parts.push({ inlineData: { mimeType: 'image/jpeg', data: p.image } })
+  }
+  const first = args.pages[0]?.page ?? 1
+  const prompt = `Estas son las páginas ${first}-${args.pages[args.pages.length - 1]?.page ?? first} del archivo "${args.fileName}" de ${args.subject.name}: ejercicios hechos en clase, muchas veces escritos a mano.
+Separa CADA ejercicio (o apartado claramente independiente) y clasifícalo por TIPO de ejercicio en una carpeta.
+- folder: tipo de ejercicio, corto y concreto, en español y con mayúscula inicial (ej. en Cálculo: "Integrales definidas", "Integrales impropias", "Áreas entre curvas", "Límites", "Series"; en Álgebra: "Determinantes", "Sistemas de ecuaciones", "Subespacios vectoriales"). No uses carpetas genéricas como "Ejercicios" o "Varios" salvo que no haya otra opción.${args.folders.length ? `\n  Carpetas que ya existen (REUTILÍZALAS si encaja, escritas exactamente igual): ${args.folders.map((f) => `"${f}"`).join(', ')}.` : ''}
+- title: nombre corto (ej. "Ej. 3 · ∫ x·e^x dx" o "Área entre y=x² e y=x").
+- statement: el enunciado transcrito fielmente en markdown, con las fórmulas en LaTeX entre $...$ (o $$...$$ si van aparte). Si no hay enunciado escrito, describe qué se pide a partir de lo resuelto.
+- solution: la resolución que haya en las páginas, transcrita paso a paso en markdown con LaTeX; vacío si no está resuelto.
+- page: número de página donde empieza el ejercicio.
+- continues: true SOLO si la primera página empieza con la continuación de un ejercicio de páginas anteriores (entonces folder/title pueden ir vacíos y solution lleva lo que falta).
+Ignora tachones, garabatos y cabeceras. Si no hay ningún ejercicio, devuelve la lista vacía.`
+  const schema = {
+    type: 'OBJECT',
+    properties: {
+      exercises: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: {
+            page: { type: 'INTEGER' },
+            folder: { type: 'STRING' },
+            title: { type: 'STRING' },
+            statement: { type: 'STRING' },
+            solution: { type: 'STRING' },
+            continues: { type: 'BOOLEAN' },
+          },
+          required: ['page', 'folder', 'title', 'statement'],
+        },
+      },
+    },
+    required: ['exercises'],
+  }
+  const r = await askJSON<unknown>([...parts, { text: prompt }], schema, SYSTEM, 0.2)
+  return asList<FoundExercise>(r, 'exercises').filter((e) => e && (e.continues ? e.solution?.trim() || e.statement?.trim() : e.statement?.trim() || e.solution?.trim()))
+}
+
 /** Comprueba que la clave funciona. */
 export async function aiTest(): Promise<string> {
   return ask([{ text: 'Responde solo con: "IA conectada ✓"' }], { temperature: 0 })

@@ -38,6 +38,7 @@ export async function exportAll(): Promise<Blob> {
     tasks: await db.tasks.toArray(),
     notes: await db.notes.toArray(),
     settings: await db.settings.toArray(),
+    exercises: await db.exercises.toArray(),
     files: serialized,
   }
   return new Blob([JSON.stringify(payload)], { type: 'application/json' })
@@ -51,10 +52,10 @@ export async function importAll(file: Blob): Promise<void> {
     ...rest,
     blob: b64 ? base64ToBlob(b64, rest.mime) : undefined,
   }))
-  await db.transaction('rw', [db.subjects, db.classes, db.events, db.tasks, db.notes, db.files, db.settings], async () => {
+  await db.transaction('rw', [db.subjects, db.classes, db.events, db.tasks, db.notes, db.files, db.settings, db.exercises], async () => {
     await Promise.all([
       db.subjects.clear(), db.classes.clear(), db.events.clear(), db.tasks.clear(),
-      db.notes.clear(), db.files.clear(), db.settings.clear(),
+      db.notes.clear(), db.files.clear(), db.settings.clear(), db.exercises.clear(),
     ])
     await db.subjects.bulkAdd(data.subjects)
     await db.classes.bulkAdd(data.classes)
@@ -63,6 +64,7 @@ export async function importAll(file: Blob): Promise<void> {
     await db.notes.bulkAdd(data.notes)
     await db.settings.bulkAdd(data.settings)
     await db.files.bulkAdd(files)
+    if (Array.isArray(data.exercises)) await db.exercises.bulkAdd(data.exercises)
   })
 }
 

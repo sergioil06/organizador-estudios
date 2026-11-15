@@ -514,3 +514,14 @@ mark { background: #c8f26a33; color: var(--text); border-radius: 3px; padding: 0
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+
+/* ---------- Ejercicios por tipo ---------- */
+.ex-folder { cursor: pointer; color: inherit; font: inherit; }
+.ex-folder svg { color: var(--accent); flex: none; margin-top: 1px; }
+.ex-bar { display: block; height: 4px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+.ex-bar > span { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width .3s var(--ease); }
+.ex-status { width: 10px; height: 10px; border-radius: 50%; flex: none; border: 2px solid var(--faint); }
+.ex-status.hecho { background: var(--accent); border-color: var(--accent); }
+.ex-status.repasar { background: var(--warn); border-color: var(--warn); }
+.ex-solution { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); padding: 12px 14px; }
+.ex-card .md { overflow-x: auto; }

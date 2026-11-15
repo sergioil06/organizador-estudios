@@ -15,6 +15,7 @@ import { SubjectSheet } from './Subjects'
 import { AttendanceView, BiblioView, GradesView } from '../features/grades'
 import { ChatView, SummariesView } from '../features/chat'
 import { FlashcardsView } from '../features/flashcards'
+import { ExercisesView } from '../features/exercises'
 
 export async function createNote(subjectId?: string, topic?: string): Promise<string> {
   const id = uid()
@@ -34,6 +35,7 @@ export default function SubjectDetail() {
 
   const tabs: { id: string; label: string }[] = [
     { id: 'archivos', label: 'Archivos' },
+    { id: 'ejercicios', label: 'Ejercicios' },
     { id: 'notas', label: 'Notas' },
     { id: 'tareas', label: 'Tareas' },
     { id: 'examenes', label: 'Exámenes' },
@@ -79,6 +81,7 @@ export default function SubjectDetail() {
       </div>
 
       {tab === 'archivos' && <FilesTab subjectId={id} />}
+      {tab === 'ejercicios' && <ExercisesView subjectId={id} />}
       {tab === 'notas' && <NotesTab subjectId={id} />}
       {tab === 'tareas' && <TasksTab subjectId={id} />}
       {tab === 'examenes' && <ExamsTab subjectId={id} />}

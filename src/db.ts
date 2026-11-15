@@ -231,6 +231,28 @@ export interface Summary {
   createdAt: number
 }
 
+export type ExerciseStatus = 'pendiente' | 'hecho' | 'repasar'
+
+/** Un ejercicio sacado por la IA de un PDF/foto, guardado en una carpeta por tipo (ej. "Integrales impropias"). */
+export interface Exercise {
+  id: string
+  subjectId: string
+  /** Carpeta (tipo de ejercicio). */
+  folder: string
+  title: string
+  /** Enunciado en markdown con LaTeX. */
+  statement: string
+  /** Resolución, si estaba en el archivo. */
+  solution?: string
+  fileId?: string
+  fileName?: string
+  /** Página del archivo donde empieza (1 = primera). */
+  page?: number
+  status: ExerciseStatus
+  order: number
+  createdAt: number
+}
+
 /** Registro de borrados, para que la sincronización sepa qué quitar en otros dispositivos. */
 export interface Tombstone {
   key: string // `${tabla}:${id}`
@@ -255,6 +277,7 @@ class OrganizadorDB extends Dexie {
   biblio!: EntityTable<BiblioEntry, 'id'>
   chats!: EntityTable<ChatMessage, 'id'>
   summaries!: EntityTable<Summary, 'id'>
+  exercises!: EntityTable<Exercise, 'id'>
   tombstones!: EntityTable<Tombstone, 'key'>
 
   constructor() {
@@ -279,12 +302,15 @@ class OrganizadorDB extends Dexie {
       summaries: 'id, subjectId, createdAt',
       tombstones: 'key, at',
     })
+    this.version(3).stores({
+      exercises: 'id, subjectId, fileId, folder',
+    })
   }
 }
 
 /** Tablas que se sincronizan entre dispositivos (los archivos van aparte, a Google Drive). */
 export const SYNC_TABLES = [
-  'subjects', 'classes', 'events', 'tasks', 'notes', 'grades', 'cards', 'sessions', 'plans', 'attendance', 'biblio', 'chats', 'summaries',
+  'subjects', 'classes', 'events', 'tasks', 'notes', 'grades', 'cards', 'sessions', 'plans', 'attendance', 'biblio', 'chats', 'summaries', 'exercises',
 ] as const
 export type SyncTable = (typeof SYNC_TABLES)[number]
 
