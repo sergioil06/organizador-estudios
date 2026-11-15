@@ -16,7 +16,10 @@ export function ChatView({ subjectId }: { subjectId: string }) {
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
   const end = useRef<HTMLDivElement>(null)
-  useEffect(() => end.current?.scrollIntoView({ block: 'end' }), [msgs.length, busy])
+  // Algunos navegadores ya devuelven una promesa en scrollIntoView: no puede ser el valor del efecto (dejaba la pantalla en negro).
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: 'end' })
+  }, [msgs.length, busy])
 
   const send = async () => {
     const question = q.trim()
@@ -27,7 +30,8 @@ export function ChatView({ subjectId }: { subjectId: string }) {
     try {
       const ctx = await subjectContext(subjectId)
       const history = msgs.slice(-12).map((m) => ({ role: m.role, text: m.text }))
-      const answer = await aiChat(subject, ctx.text, history, question)
+      const answer = await aiChat(subject, ctx.text, history.filter((t) => typeof t.text === 'string' && t.text.trim()), question)
+      if (typeof answer !== 'string' || !answer.trim()) throw new Error('La IA no devolvió respuesta. Prueba otra vez.')
       await db.chats.add({ id: uid(), subjectId, role: 'model', text: answer, createdAt: Date.now() })
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Error de la IA')
@@ -47,7 +51,7 @@ export function ChatView({ subjectId }: { subjectId: string }) {
           </Empty>
         </div>
       )}
-      {msgs.map((m) => (
+      {msgs.filter((m) => typeof m.text === 'string' && m.text.trim()).map((m) => (
         <div key={m.id} className={m.role === 'user' ? 'card pad' : 'card accent pad'} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'stretch', maxWidth: m.role === 'user' ? '85%' : undefined }}>
           {m.role === 'user' ? <span>{m.text}</span> : <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />}
         </div>
