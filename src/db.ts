@@ -237,7 +237,9 @@ export type ExerciseStatus = 'pendiente' | 'hecho' | 'repasar'
 export interface Exercise {
   id: string
   subjectId: string
-  /** Carpeta (tipo de ejercicio). */
+  /** Tema de la asignatura (carpeta principal), p. ej. "Tema 2 · Integrales". */
+  topic?: string
+  /** Carpeta (tipo de ejercicio) dentro del tema. */
   folder: string
   title: string
   /** Enunciado en markdown con LaTeX. */

@@ -553,6 +553,7 @@ Reglas: reparte los temas entre los días (más tiempo a los temas largos o dif�
 
 export interface FoundExercise {
   page: number
+  topic?: string
   folder: string
   title: string
   statement: string
@@ -569,6 +570,9 @@ export async function aiExercises(args: {
   subject: Subject
   fileName: string
   folders: string[]
+  /** Temas de la asignatura; si se pasa `fixedTopic`, todo va a ese tema y la IA no lo elige. */
+  topics: string[]
+  fixedTopic?: string
   pages: { page: number; image?: string; text?: string }[]
   totalPages: number
   onWait?: (msg: string) => void
@@ -580,8 +584,9 @@ export async function aiExercises(args: {
   }
   const first = args.pages[0]?.page ?? 1
   const prompt = `Estas son las páginas ${first}-${args.pages[args.pages.length - 1]?.page ?? first} del archivo "${args.fileName}" de ${args.subject.name}: ejercicios hechos en clase, muchas veces escritos a mano.
-Separa CADA ejercicio (o apartado claramente independiente) y clasifícalo por TIPO de ejercicio en una carpeta.
-- folder: tipo de ejercicio, corto y concreto, en español y con mayúscula inicial (ej. en Cálculo: "Integrales definidas", "Integrales impropias", "Áreas entre curvas", "Límites", "Series"; en Álgebra: "Determinantes", "Sistemas de ecuaciones", "Subespacios vectoriales"). No uses carpetas genéricas como "Ejercicios" o "Varios" salvo que no haya otra opción.${args.folders.length ? `\n  Carpetas que ya existen (REUTILÍZALAS si encaja, escritas exactamente igual): ${args.folders.map((f) => `"${f}"`).join(', ')}.` : ''}
+Separa CADA ejercicio (o apartado claramente independiente), di a qué TEMA de la asignatura pertenece y clasifícalo por TIPO de ejercicio en una carpeta dentro de ese tema.
+${args.fixedTopic ? `- topic: todos son del tema "${args.fixedTopic}" (ponlo así).` : `- topic: el tema de la asignatura al que pertenece.${args.topics.length ? ` Elige EXACTAMENTE uno de estos (escrito igual): ${args.topics.map((t) => `"${t}"`).join(', ')}. Solo si claramente no encaja en ninguno, propón uno nuevo con un nombre corto.` : ' Pon un nombre corto de tema (ej. "Integrales", "Límites y continuidad", "Matrices").'}`}
+- folder: tipo de ejercicio dentro del tema, corto y concreto, en español y con mayúscula inicial (ej. en Cálculo: "Integrales definidas", "Integrales impropias", "Áreas entre curvas", "Límites", "Series"; en Álgebra: "Determinantes", "Sistemas de ecuaciones", "Subespacios vectoriales"). No uses carpetas genéricas como "Ejercicios" o "Varios" salvo que no haya otra opción.${args.folders.length ? `\n  Carpetas que ya existen (REUTILÍZALAS si encaja, escritas exactamente igual): ${args.folders.map((f) => `"${f}"`).join(', ')}.` : ''}
 - title: nombre corto (ej. "Ej. 3 · ∫ x·e^x dx" o "Área entre y=x² e y=x").
 - statement: el enunciado transcrito fielmente en markdown, con las fórmulas en LaTeX entre $...$ (o $$...$$ si van aparte). Si no hay enunciado escrito, describe qué se pide a partir de lo resuelto.
 - solution: la resolución que haya en las páginas, transcrita paso a paso en markdown con LaTeX; vacío si no está resuelto.
@@ -597,6 +602,7 @@ Ignora tachones, garabatos y cabeceras. Si no hay ningún ejercicio, devuelve la
           type: 'OBJECT',
           properties: {
             page: { type: 'INTEGER' },
+            topic: { type: 'STRING' },
             folder: { type: 'STRING' },
             title: { type: 'STRING' },
             statement: { type: 'STRING' },
